@@ -1,0 +1,35 @@
+name: Full-Stack Deployment Harness CI
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test Harness & Validation Suites
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        python-version: [ "3.11", "3.12" ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run Unit & Policy Engine Tests
+        run: python -m unittest discover -s evaluation -p "test_*.py"
+
+      - name: Run Layer A Simulation Sandbox Tests
+        run: python -m unittest discover -s sandbox -p "test_*.py"
+
+      - name: Run Native Linux Integration Checks (Linux only)
+        if: runner.os == 'Linux'
+        run: python integration/test_native_linux.py

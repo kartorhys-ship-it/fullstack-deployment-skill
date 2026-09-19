@@ -22,6 +22,10 @@ class StateManager:
         self.previous_link = os.path.join(base_dir, "previous")
         self._checkpoints: List[StateCheckpoint] = []
 
+    @property
+    def checkpoints(self) -> List[StateCheckpoint]:
+        return list(self._checkpoints)
+
     def create_checkpoint(self, description: str, metadata: Dict[str, Any]) -> StateCheckpoint:
         """Saves a discrete checkpoint before executing a reversible system change (T3)."""
         cp_id = f"cp_{int(time.time() * 1000)}"

@@ -1,14 +1,26 @@
-"""Change Manifest Protocol & Structured State Management.
+"""Transactional Change Manifest Protocol & State Machine.
 
-Defines the ChangeManifest schema, validation logic, cryptographic/session manifest_id
-issuance, scope amendment tracking, and HITL authorization lifecycle.
+Defines the ManifestStatus lifecycle, canonical path validation, and transactional
+amendments to ensure failed impact checks never leave behind usable authorization.
 """
 
 import hashlib
 import time
 import json
+from enum import Enum
+from pathlib import Path
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
+
+
+class ManifestStatus(str, Enum):
+    DRAFT = "DRAFT"
+    PENDING_VALIDATION = "PENDING_VALIDATION"
+    ACCEPTED = "ACCEPTED"
+    AMENDING = "AMENDING"
+    REJECTED = "REJECTED"
+    REVOKED = "REVOKED"
+    EXPIRED = "EXPIRED"
 
 
 class ManifestValidationError(Exception):
@@ -16,31 +28,60 @@ class ManifestValidationError(Exception):
     pass
 
 
+def canonicalize_path(path_str: str) -> str:
+    """Validates and canonicalizes a relative target file path.
+
+    Rejects empty paths, .., absolute paths, and leading slashes.
+    """
+    if not path_str or not isinstance(path_str, str) or not path_str.strip():
+        raise ManifestValidationError("Target file path cannot be empty.")
+
+    clean = path_str.strip()
+    if clean.startswith("/") or clean.startswith("\\") or Path(clean).is_absolute():
+        raise ManifestValidationError(f"Absolute paths not permitted in manifest targets: '{path_str}'. Must be relative.")
+
+    p = Path(clean)
+    parts = p.parts
+    if ".." in parts:
+        raise ManifestValidationError(f"Path traversal '..' prohibited in target: '{path_str}'.")
+
+    # Normalized relative path
+    norm = str(p.as_posix()).lstrip("./")
+    return norm
+
+
 @dataclass
 class ChangeManifest:
     manifest_id: str
     version: int
     intent: str
-    targets: List[str]
-    expected_dependencies: List[str]
+    targets: List[str]                  # Canonical file paths strictly
+    expected_dependencies: List[str]    # Graph dependency nodes (services, endpoints)
     invariants: List[str]
     verification: List[str]
     rollback: Dict[str, Any]
+    status: ManifestStatus = ManifestStatus.PENDING_VALIDATION
     full_rewrite: bool = False
     rewrite_justification: Optional[str] = None
     created_at: float = field(default_factory=time.time)
-    frozen: bool = False
-    hitl_approved: bool = False
+    rejection_reason: Optional[str] = None
     amendment_history: List[Dict[str, Any]] = field(default_factory=list)
 
+    @property
+    def is_accepted(self) -> bool:
+        return self.status == ManifestStatus.ACCEPTED
+
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["status"] = self.status.value
+        return d
 
     def to_yaml(self) -> str:
         """Render clean, human-readable YAML audit representation."""
         lines = ["change_manifest:"]
         lines.append(f"  manifest_id: {self.manifest_id}")
         lines.append(f"  version: {self.version}")
+        lines.append(f"  status: {self.status.value}")
         lines.append(f"  intent: \"{self.intent}\"")
         lines.append("  targets:")
         for t in self.targets:
@@ -58,18 +99,18 @@ class ChangeManifest:
         lines.append(f"  full_rewrite: {str(self.full_rewrite).lower()}")
         if self.rewrite_justification:
             lines.append(f"  rewrite_justification: \"{self.rewrite_justification}\"")
-        lines.append(f"  hitl_approved: {str(self.hitl_approved).lower()}")
         return "\n".join(lines)
 
 
 class ManifestRegistry:
-    """In-memory registry governing active change manifests."""
+    """In-memory transactional registry governing active change manifests."""
 
     def __init__(self):
         self._manifests: Dict[str, ChangeManifest] = {}
+        self._amendment_staging: Dict[str, ChangeManifest] = {}
         self._counter = 0
 
-    def submit_manifest(
+    def create_pending_manifest(
         self,
         intent: str,
         targets: List[str],
@@ -80,7 +121,10 @@ class ManifestRegistry:
         full_rewrite: bool = False,
         rewrite_justification: Optional[str] = None
     ) -> ChangeManifest:
-        """Validate, register, and freeze a new structured Change Manifest."""
+        """Validates inputs and creates a manifest in PENDING_VALIDATION state.
+
+        Does not authorize execution until impact validation succeeds and accept_manifest is called.
+        """
         # 1. Validation
         if not intent or not intent.strip():
             raise ManifestValidationError("Change manifest requires a non-empty 'intent'.")
@@ -99,12 +143,16 @@ class ManifestRegistry:
                 "Prefer the smallest semantically complete change."
             )
 
-        # Normalize paths
-        norm_targets = [t.replace("\\", "/").lstrip("./") for t in targets]
+        # Canonicalize target paths strictly
+        canonical_targets = []
+        for t in targets:
+            c = canonicalize_path(t)
+            if c not in canonical_targets:
+                canonical_targets.append(c)
 
         self._counter += 1
         date_str = time.strftime("%Y%m%d")
-        seed = f"{intent}:{sorted(norm_targets)}:{time.time()}"
+        seed = f"{intent}:{sorted(canonical_targets)}:{time.time()}"
         m_hash = hashlib.sha256(seed.encode()).hexdigest()[:8]
         manifest_id = f"chg_{date_str}_{self._counter:03d}_{m_hash}"
 
@@ -112,68 +160,111 @@ class ManifestRegistry:
             manifest_id=manifest_id,
             version=1,
             intent=intent.strip(),
-            targets=norm_targets,
+            targets=canonical_targets,
             expected_dependencies=expected_dependencies or [],
             invariants=invariants,
             verification=verification,
             rollback=rollback,
             full_rewrite=full_rewrite,
             rewrite_justification=rewrite_justification,
-            frozen=True
+            status=ManifestStatus.PENDING_VALIDATION
         )
 
         self._manifests[manifest_id] = manifest
         return manifest
 
-    def amend_manifest(
+    def accept_manifest(self, manifest_id: str) -> ChangeManifest:
+        """Transitions manifest from PENDING_VALIDATION to ACCEPTED."""
+        manifest = self._manifests.get(manifest_id)
+        if not manifest:
+            raise ManifestValidationError(f"Manifest '{manifest_id}' not found.")
+        if manifest.status != ManifestStatus.PENDING_VALIDATION:
+            raise ManifestValidationError(f"Cannot accept manifest in status '{manifest.status.value}'.")
+
+        manifest.status = ManifestStatus.ACCEPTED
+        return manifest
+
+    def reject_manifest(self, manifest_id: str, reason: str) -> ChangeManifest:
+        """Transitions manifest to REJECTED."""
+        manifest = self._manifests.get(manifest_id)
+        if manifest:
+            manifest.status = ManifestStatus.REJECTED
+            manifest.rejection_reason = reason
+        return manifest
+
+    def stage_amendment(
         self,
         manifest_id: str,
         new_targets: Optional[List[str]] = None,
         new_dependencies: Optional[List[str]] = None,
         amendment_reason: str = ""
     ) -> ChangeManifest:
-        """Amend an existing manifest. Automatically invalidates any previous HITL authorizations."""
-        manifest = self.get_manifest(manifest_id)
-        if not manifest:
-            raise ManifestValidationError(f"Manifest '{manifest_id}' not found.")
+        """Creates an isolated transactional candidate clone in AMENDING state.
+
+        The existing ACCEPTED manifest remains intact until commit_amendment is called!
+        """
+        current = self.get_manifest(manifest_id)
+        if not current or current.status != ManifestStatus.ACCEPTED:
+            raise ManifestValidationError(f"Cannot amend manifest '{manifest_id}': not currently ACCEPTED.")
 
         if not amendment_reason or len(amendment_reason.strip()) < 5:
             raise ManifestValidationError("Amending a manifest requires an explicit 'amendment_reason'.")
 
-        # Record history
-        record = {
-            "from_version": manifest.version,
-            "timestamp": time.time(),
-            "reason": amendment_reason,
-            "previous_targets": list(manifest.targets),
-            "previous_dependencies": list(manifest.expected_dependencies)
-        }
-        manifest.amendment_history.append(record)
-
+        # Create candidate clone
+        candidate_targets = list(current.targets)
         if new_targets:
             for nt in new_targets:
-                norm = nt.replace("\\", "/").lstrip("./")
-                if norm not in manifest.targets:
-                    manifest.targets.append(norm)
+                c = canonicalize_path(nt)
+                if c not in candidate_targets:
+                    candidate_targets.append(c)
 
+        candidate_deps = list(current.expected_dependencies)
         if new_dependencies:
             for nd in new_dependencies:
-                if nd not in manifest.expected_dependencies:
-                    manifest.expected_dependencies.append(nd)
+                if nd not in candidate_deps:
+                    candidate_deps.append(nd)
 
-        manifest.version += 1
+        candidate = ChangeManifest(
+            manifest_id=current.manifest_id,
+            version=current.version + 1,
+            intent=current.intent,
+            targets=candidate_targets,
+            expected_dependencies=candidate_deps,
+            invariants=list(current.invariants),
+            verification=list(current.verification),
+            rollback=dict(current.rollback),
+            full_rewrite=current.full_rewrite,
+            rewrite_justification=current.rewrite_justification,
+            status=ManifestStatus.AMENDING,
+            amendment_history=list(current.amendment_history)
+        )
 
-        # CRITICAL INVARIANT: Scope expansion invalidates prior HITL approvals
-        manifest.hitl_approved = False
+        record = {
+            "from_version": current.version,
+            "to_version": candidate.version,
+            "timestamp": time.time(),
+            "reason": amendment_reason,
+            "previous_targets": list(current.targets),
+            "added_targets": [t for t in candidate_targets if t not in current.targets]
+        }
+        candidate.amendment_history.append(record)
 
-        return manifest
+        self._amendment_staging[manifest_id] = candidate
+        return candidate
 
-    def grant_hitl_approval(self, manifest_id: str) -> ChangeManifest:
-        manifest = self.get_manifest(manifest_id)
-        if not manifest:
-            raise ManifestValidationError(f"Manifest '{manifest_id}' not found.")
-        manifest.hitl_approved = True
-        return manifest
+    def commit_amendment(self, manifest_id: str) -> ChangeManifest:
+        """Replaces current accepted manifest with verified candidate."""
+        candidate = self._amendment_staging.pop(manifest_id, None)
+        if not candidate:
+            raise ManifestValidationError(f"No staged amendment found for manifest '{manifest_id}'.")
+
+        candidate.status = ManifestStatus.ACCEPTED
+        self._manifests[manifest_id] = candidate
+        return candidate
+
+    def rollback_amendment(self, manifest_id: str, reason: str):
+        """Discards candidate amendment upon validation failure, leaving existing manifest intact."""
+        self._amendment_staging.pop(manifest_id, None)
 
     def get_manifest(self, manifest_id: str) -> Optional[ChangeManifest]:
         return self._manifests.get(manifest_id)

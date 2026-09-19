@@ -1,6 +1,10 @@
 """
 Sealed Evaluator Runner
 Executes frozen evaluation tasks in isolation without leaking task diagnostics or prompts.
+
+NOTE ON METHODOLOGY:
+Validates agent response fixtures against isolated invariant specifications.
+Timing and token heuristics reflect fixture output characteristics, not live LLM API calls.
 """
 import time
 import os
@@ -56,6 +60,7 @@ def run_sealed_evaluation(agent_fn: Callable[[str], str], trials_per_task: int =
 
     return {
         "suite": "sealed_frozen_eval",
+        "evaluation_mode": "fixture_simulation",
         "total_evaluations": total_runs,
         "total_passed": total_passed,
         "pass_rate": pass_rate,

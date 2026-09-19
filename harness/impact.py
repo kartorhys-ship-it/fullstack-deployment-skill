@@ -99,19 +99,16 @@ class ImpactAnalyzer:
         radius = self.compute_blast_radius(manifest.targets, max_depth=3)
         discovered_files = radius["affected_files"]
 
-        # Normalize declared targets
-        declared_set = set(t.replace("\\", "/").lstrip("./") for t in manifest.targets)
-        for dep in manifest.expected_dependencies:
-            declared_set.add(dep.replace("\\", "/").lstrip("./"))
+        # Canonical declared file targets strictly
+        declared_file_targets = set(t.replace("\\", "/").lstrip("./") for t in manifest.targets)
 
         missing = []
         explanations = {}
 
         for f in discovered_files:
             norm_f = f.replace("\\", "/").lstrip("./")
-            # Check if this discovered file is in the declared set
-            is_declared = any(dec in norm_f or norm_f in dec for dec in declared_set)
-            if not is_declared:
+            # Exact path matching strictly (no substring bleed)
+            if norm_f not in declared_file_targets:
                 missing.append(norm_f)
                 ev = radius["file_evidence"].get(f, [])
                 reasons = [e.get("reason", "Structural dependency") for e in ev]

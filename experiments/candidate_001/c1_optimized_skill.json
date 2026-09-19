@@ -1,4 +1,5 @@
 {
+  "evaluation_mode": "fixture_simulation",
   "total_evaluations": 33,
   "passed_evaluations": 33,
   "task_success_rate": 1.0,

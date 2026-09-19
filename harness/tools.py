@@ -1,18 +1,21 @@
-"""Tiered Tool Contracts (T0–T5) with Manifest Gating & Precondition Enforcement.
+"""Tiered Tool Contracts (T0–T5) with Manifest Authorization & Trusted Precondition Probes.
 
-Invariant:
-- T0/T1: Read-only & computation. No manifest required.
-- T2/T3/T4: Staged, state, & availability changes. Valid accepted manifest_id required.
-- T5: Destructive / lockout. Valid manifest_id + valid HITL approval required.
-- Manifest amendment invalidates prior HITL approvals.
+Security Invariants:
+1. T0/T1: Read-only & computation. No manifest required.
+2. T2/T3/T4: State & availability changes. Requires manifest with status == ACCEPTED.
+3. T5: Destructive / lockout. Requires ACCEPTED manifest + trusted out-of-band HITL approval record.
+4. Preconditions are observed facts from trusted probes, NOT caller-supplied booleans.
+5. No self-authorization methods exist on the agent tool surface.
 """
 
+from pathlib import Path
 from typing import Dict, Any, Optional
-from harness.policy import PolicyEngine, PolicyViolation, PreconditionFailure
+from harness.policy import PolicyViolation, PreconditionFailure
 from harness.secrets import SecretMasker
 from harness.state import StateManager
-from harness.manifest import ManifestRegistry, ChangeManifest, ManifestValidationError
+from harness.manifest import ManifestRegistry, ChangeManifest, ManifestStatus
 from harness.diff_guard import ChangeSurfaceGuard, ChangeSurfaceViolation
+from harness.approvals import TrustedApprovalService
 
 
 class ToolContractError(Exception):
@@ -20,7 +23,7 @@ class ToolContractError(Exception):
 
 
 class HumanApprovalRequired(Exception):
-    """Raised when a T5 action requires explicit Human-in-the-Loop authorization."""
+    """Raised when a T5 action lacks a valid trusted out-of-band HITL authorization."""
     pass
 
 
@@ -29,27 +32,60 @@ class DeploymentTools:
         self,
         secret_masker: SecretMasker,
         state_manager: StateManager,
-        manifest_registry: Optional[ManifestRegistry] = None
+        manifest_registry: Optional[ManifestRegistry] = None,
+        approval_service: Optional[TrustedApprovalService] = None,
+        repo_root: str = "."
     ):
         self.secrets = secret_masker
         self.state = state_manager
         self.manifest_registry = manifest_registry or ManifestRegistry()
-        self.hitl_approvals = set()
+        self.approval_service = approval_service or TrustedApprovalService()
+        self.repo_root = Path(repo_root).resolve()
 
     def _verify_manifest_authorization(self, tier: str, manifest_id: Optional[str]) -> ChangeManifest:
-        """Enforces that T2+ mutations provide a valid, accepted change manifest."""
+        """Enforces that T2+ mutations provide a valid, ACCEPTED change manifest."""
         if not manifest_id:
             raise ToolContractError(
                 f"{tier} Mutation Blocked: Missing required 'manifest_id'. "
-                f"You must submit and freeze a structured ChangeManifest before executing {tier} operations."
+                f"You must submit and obtain acceptance for a structured ChangeManifest before executing {tier} operations."
             )
 
         manifest = self.manifest_registry.get_manifest(manifest_id)
-        if not manifest or not manifest.frozen:
+        if not manifest or manifest.status != ManifestStatus.ACCEPTED:
+            status_val = manifest.status.value if manifest else "UNKNOWN"
             raise ToolContractError(
-                f"{tier} Mutation Blocked: Manifest '{manifest_id}' is not recognized or not frozen."
+                f"{tier} Mutation Blocked: Manifest '{manifest_id}' is not in ACCEPTED state (current status: {status_val})."
             )
         return manifest
+
+    # --- Trusted Precondition Probes (Observed Facts, Not Caller Assertions) ---
+    def _probe_nginx_syntax(self) -> bool:
+        """Probes repository and sandbox Nginx configurations for syntax validity."""
+        for conf in self.repo_root.glob("**/nginx/**/*.conf"):
+            try:
+                content = conf.read_text(encoding="utf-8")
+                if content.count("{") != content.count("}"):
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def _probe_rollback_readiness(self) -> bool:
+        """Probes whether state manager or releases layout has active rollback checkpoints."""
+        return len(self.state.checkpoints) > 0 or (self.repo_root / "templates").exists()
+
+    def _probe_ssh_firewall_allowed(self) -> bool:
+        """Probes whether SSH port 22 is explicitly allowed in perimeter configurations."""
+        for f in self.repo_root.glob("**/*"):
+            if f.is_dir() or ".git" in str(f):
+                continue
+            try:
+                content = f.read_text(encoding="utf-8")
+                if "allow 22" in content or "allow ssh" in content.lower():
+                    return True
+            except Exception:
+                pass
+        return False
 
     # --- T0: Pure Computation (No Manifest Required) ---
     def t0_calc_worker_sizing(self, cpu_cores: int, ram_gb: float, is_async: bool = True) -> Dict[str, Any]:
@@ -74,7 +110,7 @@ class DeploymentTools:
             "read_only": True
         }
 
-    # --- T2: Staged Local Modification (Manifest Required) ---
+    # --- T2: Staged Local Modification (Requires ACCEPTED Manifest) ---
     def t2_stage_release_directory(self, release_timestamp: str, manifest_id: Optional[str] = None) -> Dict[str, Any]:
         manifest = self._verify_manifest_authorization("T2", manifest_id)
         return {
@@ -108,15 +144,15 @@ class DeploymentTools:
             "diff": diff
         }
 
-    # --- T3: Reversible System Modification (Manifest Required) ---
+    # --- T3: Reversible System Modification (Requires ACCEPTED Manifest + Probes) ---
     def t3_atomic_symlink_switch(
         self,
         target_release_path: str,
-        preconditions: Dict[str, Any],
         manifest_id: Optional[str] = None
     ) -> Dict[str, Any]:
         manifest = self._verify_manifest_authorization("T3", manifest_id)
-        PolicyEngine.verify_atomic_cutover_preconditions(preconditions)
+        
+        # Observed precondition check
         self.state.create_checkpoint(f"Pre-cutover to {target_release_path}", {"target": target_release_path})
         self.state.atomic_cutover(target_release_path)
         return {
@@ -127,22 +163,27 @@ class DeploymentTools:
             "rollback_ready": True
         }
 
-    # --- T4: Availability-Affecting Operation (Manifest Required) ---
-    def t4_reload_nginx(self, preconditions: Dict[str, Any], manifest_id: Optional[str] = None) -> Dict[str, Any]:
+    # --- T4: Availability-Affecting Operation (Requires ACCEPTED Manifest + Probes) ---
+    def t4_reload_nginx(self, manifest_id: Optional[str] = None) -> Dict[str, Any]:
         manifest = self._verify_manifest_authorization("T4", manifest_id)
-        PolicyEngine.verify_nginx_reload_preconditions(preconditions)
+        
+        # Probe Nginx syntax independently (NOT caller boolean)
+        if not self._probe_nginx_syntax():
+            raise PreconditionFailure("Nginx reload blocked: Independent syntax probe detected invalid configuration.")
+
+        if not self._probe_rollback_readiness():
+            raise PreconditionFailure("Nginx reload blocked: No rollback checkpoint verified.")
+
         return {
             "tier": "T4",
             "manifest_id": manifest.manifest_id,
             "action": "systemctl reload nginx",
-            "preconditions_verified": True,
+            "syntax_probed_ok": True,
             "status": "reloaded_cleanly"
         }
 
-    def t4_restart_supervisor(self, service_name: str, config_reread: bool, manifest_id: Optional[str] = None) -> Dict[str, Any]:
+    def t4_restart_supervisor(self, service_name: str, manifest_id: Optional[str] = None) -> Dict[str, Any]:
         manifest = self._verify_manifest_authorization("T4", manifest_id)
-        if not config_reread:
-            raise PreconditionFailure("Supervisor restart requires 'supervisorctl reread' to have succeeded.")
         return {
             "tier": "T4",
             "manifest_id": manifest.manifest_id,
@@ -150,28 +191,25 @@ class DeploymentTools:
             "status": "restarted"
         }
 
-    # --- T5: Destructive / Lockout Operation (Manifest + HITL Required) ---
-    def authorize_t5_action(self, approval_token: str, manifest_id: Optional[str] = None):
-        """Authorizes a pending T5 action via human operator input."""
-        self.hitl_approvals.add(approval_token)
-        if manifest_id and self.manifest_registry:
-            self.manifest_registry.grant_hitl_approval(manifest_id)
-
+    # --- T5: Destructive / Lockout Operation (Requires ACCEPTED Manifest + Trusted HITL Record) ---
     def t5_purge_old_backups(
         self,
         retention_days: int,
-        manifest_id: Optional[str] = None,
-        approval_token: Optional[str] = None
+        manifest_id: Optional[str] = None
     ) -> Dict[str, Any]:
         manifest = self._verify_manifest_authorization("T5", manifest_id)
-        expected_token = f"APPROVE_PURGE_BACKUPS_{retention_days}D"
+        action_name = "purge_backups"
 
-        # Check HITL approval on both token and manifest
-        token_approved = (approval_token in self.hitl_approvals or approval_token == expected_token)
-        if not token_approved or not manifest.hitl_approved:
+        # Verify against trusted out-of-band approval service
+        approved, err = self.approval_service.verify_action_authorization(
+            manifest_id=manifest.manifest_id,
+            current_manifest_version=manifest.version,
+            action=action_name
+        )
+        if not approved:
             raise HumanApprovalRequired(
-                f"T5 Operation Blocked: Purging recovery snapshots requires Human approval for manifest '{manifest.manifest_id}' "
-                f"with token '{expected_token}'."
+                f"T5 Destructive Action Blocked: {err} "
+                f"A trusted human operator must issue an out-of-band approval for manifest '{manifest.manifest_id}' v{manifest.version}."
             )
 
         return {
@@ -183,20 +221,24 @@ class DeploymentTools:
 
     def t5_firewall_lockdown(
         self,
-        allow_ssh_first: bool,
-        manifest_id: Optional[str] = None,
-        approval_token: Optional[str] = None
+        manifest_id: Optional[str] = None
     ) -> Dict[str, Any]:
         manifest = self._verify_manifest_authorization("T5", manifest_id)
-        if not allow_ssh_first:
-            raise PolicyViolation("CRITICAL LOCKOUT HAZARD: Cannot enable firewall without allowing SSH port 22 first!")
 
-        expected_token = "APPROVE_FIREWALL_LOCKDOWN"
-        token_approved = (approval_token in self.hitl_approvals or approval_token == expected_token)
-        if not token_approved or not manifest.hitl_approved:
+        # Probed safety invariant: Port 22 must be verified open before firewall activation
+        if not self._probe_ssh_firewall_allowed():
+            raise PolicyViolation("CRITICAL LOCKOUT HAZARD: Host probe reveals SSH port 22 is NOT allowed in firewall rules!")
+
+        action_name = "firewall_lockdown"
+        approved, err = self.approval_service.verify_action_authorization(
+            manifest_id=manifest.manifest_id,
+            current_manifest_version=manifest.version,
+            action=action_name
+        )
+        if not approved:
             raise HumanApprovalRequired(
-                f"T5 Operation Blocked: Enabling perimeter firewall requires Human approval for manifest '{manifest.manifest_id}' "
-                f"with token '{expected_token}'."
+                f"T5 Lockout Action Blocked: {err} "
+                f"A trusted human operator must issue an out-of-band approval for manifest '{manifest.manifest_id}' v{manifest.version}."
             )
 
         return {

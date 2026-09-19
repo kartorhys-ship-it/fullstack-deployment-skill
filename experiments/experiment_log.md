@@ -81,3 +81,39 @@ Expanded development suite with 5 new architectural benchmarks:
 * **Sealed Frozen Evaluation**: 100.0% pass rate (12/12 evaluations across 4 unseen tasks with 0 violations).
 * **Native Linux Integration**: 1 passing, 1 container check skipped on Windows host.
 * **Decision**: **ACCEPT** Candidate for release. External contracts preserved while adding Deterministic Change Intelligence $\rightarrow$ Recommended SemVer release tag: **`v1.1.0`**.
+
+---
+
+## Experiment 3: Security Boundary & State Machine Hardening (v1.2)
+
+* **Date**: 2026-09-19
+* **Experiment ID**: `EXP-003`
+* **Target System**: Full-Stack Deployment Engineering System (`main` hardened)
+* **Goal**: Eliminate security boundary vulnerabilities (HITL self-approval, fuzzy path matching, non-transactional manifests, fail-open contracts, caller-asserted preconditions) and recalibrate evaluation methodology.
+
+### 1. Audit Findings & Diagnoses
+A thorough peer engineering audit identified 6 critical issues in the v1.1 prototype:
+1. **Bypassable HITL Boundary**: `DeploymentTools.authorize_t5_action` was directly callable by the agent in-band, allowing an agent to approve its own destructive actions.
+2. **Non-Transactional Manifest Mutations**: Manifests mutated in-place during amendments without transaction rollbacks on failure, and lacked explicit lifecycle states (`DRAFT`, `ACCEPTED`, `AMENDING`, `REVOKED`).
+3. **Substring Path Confusion**: `impact.py` and `diff_guard.py` used `target in f` substring matching rather than canonical path normalization, leaving room for directory confusion.
+4. **Fail-Open Contract Engine**: Unrecognized contract types defaulted to `True` (`return True`), violating fail-closed security invariants.
+5. **Caller-Asserted Preconditions**: T4/T5 tool contracts trusted booleans supplied by caller arguments (e.g. `nginx_syntax_valid=True`) rather than executing active host probes.
+6. **Benchmark Methodology Transparency**: Previous evaluation logs reported synthetic latencies and token approximations without explicitly labeling them as deterministic fixture contract suites.
+
+### 2. Implemented Hardening Patches
+* `harness/approvals.py`: Extracted an out-of-band `TrustedApprovalService` generating cryptographically hashed `ApprovalRecord`s. Completely removed `authorize_t5_action` from the agent tool surface; T5 operations strictly require an operator-issued approval record.
+* `harness/manifest.py`: Implemented a formal `ManifestStatus` state machine with `stage_amendment()`, `commit_amendment()`, and `rollback_amendment()`. Added cross-platform `canonicalize_path()` rejecting traversal sequences (`..`) and absolute path escapes.
+* `harness/impact.py` & `harness/diff_guard.py`: Enforced canonical path normalization and strict exact target matching.
+* `harness/contracts.py`: Converted to strict fail-closed architecture raising `UnknownContractError` on unknown rules. Hardened Cloudflare IP validation with authoritative IPv4 CIDRs, `real_ip_recursive on;`, `real_ip_header CF-Connecting-IP;`, and explicit rejection of `0.0.0.0/0` / `::/0`.
+* `harness/tools.py`: Replaced caller booleans with active host probes (`_probe_nginx_syntax()`, `_probe_rollback_readiness()`, `_probe_ssh_firewall_allowed()`).
+* `harness/core.py`: Integrated transactional manifest workflow and enforced contract validation gates before executing plan steps.
+* `harness/discovery.py`: Added `DiscoveryHealth` telemetry (`files_discovered`, `files_parsed`, `parse_failures`).
+* `evaluation/runner.py` & `sealed_evaluator/runner.py`: Explicitly documented that benchmarks execute deterministic contract verification fixtures rather than live LLM API calls.
+* `.github/workflows/ci.yml`: Created automated matrix CI testing Python 3.11 and 3.12 across Ubuntu and Windows.
+
+### 3. Verification & Acceptance
+* **Harness & Security Unit Tests**: 13/13 passing in `evaluation/test_suite.py` (Policy, secrets, hardened tool contracts, manifest gating, change surface guard, graph explainability, canonical path matching, fail-closed contracts, transactional state transitions).
+* **Layer A Sandbox Tests**: 4/4 passing in `sandbox/test_sandbox.py`.
+* **Deterministic Contract Verification Suite**: 11/11 tasks passing with 0 violations across 33 evaluations on C1.
+* **Sealed Frozen Contract Verification**: 100.0% pass rate (12/12 evaluations across 4 unseen tasks with 0 violations).
+* **Decision**: **ACCEPT** Hardened security architecture $\rightarrow$ Recommended SemVer release tag: **`v1.2.0`**.

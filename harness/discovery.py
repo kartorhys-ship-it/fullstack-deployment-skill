@@ -10,7 +10,19 @@ import re
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, field
 from harness.graph import DeploymentDependencyGraph, EdgeEvidence
+
+
+@dataclass
+class DiscoveryHealth:
+    files_discovered: int = 0
+    files_parsed: int = 0
+    parse_failures: List[Dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def is_healthy(self) -> bool:
+        return len(self.parse_failures) == 0
 
 
 class InfrastructureScanner:
@@ -19,6 +31,7 @@ class InfrastructureScanner:
     def __init__(self, repo_root: str):
         self.repo_root = Path(repo_root).resolve()
         self.graph = DeploymentDependencyGraph()
+        self.health = DiscoveryHealth()
 
     def scan(self) -> DeploymentDependencyGraph:
         """Execute all extractors across the repository tree."""
@@ -35,6 +48,7 @@ class InfrastructureScanner:
         # 6. Load declared external topology (infra_manifest.yml if present)
         self._load_declared_manifest()
 
+        self.graph.health = self.health
         return self.graph
 
     def _relative_path(self, path: Path) -> str:

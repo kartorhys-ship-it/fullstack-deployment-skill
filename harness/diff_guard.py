@@ -31,12 +31,12 @@ class ChangeSurfaceGuard:
         """Validate a proposed file modification against the manifest boundaries."""
         norm_target = target_file.replace("\\", "/").lstrip("./")
 
-        # 1. Target authorization check
-        is_authorized = any(t in norm_target or norm_target in t for t in self.manifest.targets)
-        if not is_authorized:
+        # 1. Exact canonical target authorization check
+        canonical_declared = {t.replace("\\", "/").lstrip("./") for t in self.manifest.targets}
+        if norm_target not in canonical_declared:
             reason = (
                 f"CHANGE_SURFACE_VIOLATION: Attempted mutation of unauthorized file '{norm_target}'. "
-                f"Declared manifest targets: {self.manifest.targets}. "
+                f"Declared manifest targets: {sorted(list(canonical_declared))}. "
                 f"Action: Submit an amended manifest to expand target scope."
             )
             return False, reason

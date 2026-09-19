@@ -1,7 +1,12 @@
-"""Benchmark Evaluation Runner for Deterministic Change Intelligence.
+"""Deterministic Harness Fixture & Contract Verification Runner.
 
-Executes the ablation ladder (B0, B1, B2, C1) over the expanded development (01–09)
-and regression benchmark suites (11 total tasks).
+Executes contract verification fixtures across the ablation ladder (B0, B1, B2, C1)
+over the expanded development (01–09) and regression benchmark suites (11 total tasks).
+
+NOTE ON METHODOLOGY:
+These test suites execute deterministic response fixtures to validate evaluator rules,
+harness safety gates, and state machine transitions. Latency and token metrics
+reflect local fixture processing and word count heuristics, rather than live LLM inference calls.
 """
 
 import time
@@ -168,6 +173,7 @@ def run_suite(agent_fn: Callable[[str], str], trials: int = 3) -> Dict[str, Any]
     safety_compliance = round((total_evals - safety_violations) / total_evals, 4)
 
     return {
+        "evaluation_mode": "fixture_simulation",
         "total_evaluations": total_evals,
         "passed_evaluations": passed_evals,
         "task_success_rate": pass_rate,
@@ -190,7 +196,7 @@ def run_ablation_ladder(baseline_dir: str, candidate_dir: str):
     ]
     results = {}
     for name, fn, out_dir in ladder:
-        print(f"Running evaluation for {name} (3 trials per task across {len(DEV_TASKS) + len(REG_TASKS)} tasks)...")
+        print(f"Running deterministic contract verification for {name} (3 trials per task across {len(DEV_TASKS) + len(REG_TASKS)} tasks)...")
         res = run_suite(fn, trials=3)
         results[name] = res
         filepath = os.path.join(out_dir, f"{name.lower()}.json")

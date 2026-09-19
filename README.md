@@ -1,13 +1,14 @@
-# Full-Stack Deployment Engineering System
+# Full-Stack Deployment Engineering System (Harness Prototype & Skill)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Ubuntu LTS](https://img.shields.io/badge/Platform-Ubuntu%2024.04%20%7C%2022.04%20LTS-orange.svg)]()
-[![Architecture: Deterministic Change Intelligence](https://img.shields.io/badge/Architecture-Change--Intelligence--Harness-blue.svg)]()
-[![Evaluator: Sealed Benchmark](https://img.shields.io/badge/Benchmark-Sealed%20Evaluator-brightgreen.svg)]()
+[![Status: Prototype / Research Harness](https://img.shields.io/badge/Status-Prototype%20%2F%20Research%20Harness-blue.svg)]()
+[![Architecture: Deterministic Change Intelligence](https://img.shields.io/badge/Architecture-Change--Intelligence--Harness-blueviolet.svg)]()
+[![CI](https://github.com/kartorhys-ship-it/fullstack-deployment-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/kartorhys-ship-it/fullstack-deployment-skill/actions/workflows/ci.yml)
 
-An empirical, production-grade DevOps deployment engineering system and modular AI agent skill for automated, zero-downtime full-stack web application deployments on Ubuntu Linux (FastAPI, Node.js/Vite, Nginx, Meilisearch, Cloudflare CDN, and GitHub Actions CI/CD).
+A research prototype and modular AI agent engineering skill for automated, zero-downtime full-stack web application deployments on Ubuntu Linux (FastAPI, Node.js/Vite, Nginx, Meilisearch, Cloudflare CDN, and GitHub Actions CI/CD).
 
-Extracted from the 10.4-hour course *"How to Deploy, Secure, and Automate Full-Stack Web Apps"* by **Imad Saddik / freeCodeCamp.org** and augmented with **Deterministic Change Intelligence**, this system breaks the self-reinforcing failure loop of AI-generated infrastructure through structural discovery, graph impact analysis, Change Manifest gating, and cross-artifact contract enforcement.
+Extracted from the 10.4-hour course *"How to Deploy, Secure, and Automate Full-Stack Web Apps"* by **Imad Saddik / freeCodeCamp.org** and hardened with **Deterministic Change Intelligence**, this system breaks the self-reinforcing failure loop of AI-generated infrastructure through dynamic structural discovery, blast-radius impact analysis, transactional Change Manifest gating, out-of-band human approvals, and cross-artifact contract enforcement.
 
 ---
 
@@ -95,7 +96,27 @@ Deterministically validates cross-service boundaries before reload:
 
 ---
 
-## 3. Empirical Skill Optimization: Ablation Ladder Results
+## 3. Current Maturity & Security Model
+
+> [!IMPORTANT]
+> **Architecture Classification & Current Scope**:
+> This repository is a **research prototype and safety harness** exploring deterministic change control for AI-driven infrastructure engineering. It introduces mathematically and structurally bounded guardrails around non-deterministic LLMs before mutations touch host systems.
+
+### 🔒 Hardened Security Boundaries
+1. **Out-of-Band Human-in-the-Loop (HITL)**: Destructive and lockout actions (Tier T5, e.g. UFW firewall changes or root SSH disabling) strictly require a cryptographically hashed `ApprovalRecord` generated through an out-of-band operator service ([`harness/approvals.py:TrustedApprovalService`](file:///c:/Antigravity%20Projects/fullstack-deployment-skill/harness/approvals.py)). The agent's tool surface has no self-approval capabilities.
+2. **Transactional Change Manifest State Machine**: All state-modifying actions (T2–T5) require an accepted `manifest_id` managed via a strict lifecycle (`DRAFT` $\rightarrow$ `PENDING_VALIDATION` $\rightarrow$ `ACCEPTED`). Manifest amendments are transactionally staged and automatically roll back on validation failure.
+3. **Strict Canonical Path Discipline**: Targets and blast radii enforce canonical relative path matching ([`harness/manifest.py:canonicalize_path`](file:///c:/Antigravity%20Projects/fullstack-deployment-skill/harness/manifest.py)). Traversal sequences (`..`), absolute path escapes, and fuzzy substring matches are rejected before evaluation.
+4. **Fail-Closed Contract Engine**: Cross-artifact contracts ([`harness/contracts.py`](file:///c:/Antigravity%20Projects/fullstack-deployment-skill/harness/contracts.py)) fail closed: unknown contract types raise `UnknownContractError`. Active host probes verify Nginx syntax, rollback checkpoint availability, and firewall rules directly against the repository filesystem rather than trusting caller-asserted booleans.
+5. **Discovery Telemetry**: Dynamic repository fact extraction tracks parsing health (`DiscoveryHealth`) to detect partial or unparseable configurations.
+
+### 🧪 Verification Architecture & Methodology
+- **Layer A (Simulation Sandbox - `sandbox/`)**: Fast, in-memory virtual Linux host and mock HTTP verifier testing atomic cutovers, symlink swaps, and Cloudflare header spoofing defenses.
+- **Layer B (Native Linux Testbed - `integration/`)**: Containerized Ubuntu 24.04 LTS runner testing actual system binaries (`nginx -t`, `visudo -cf`, and systemd unit analyzers).
+- **Ablation & Sealed Fixture Suites (`benchmarks/`, `sealed_evaluator/`)**: Evaluates deterministic response fixtures representing distinct agent archetypes (unconstrained B0 vs domain-structured C1) against invariant specifications to prove that the harness reliably permits safe actions and halts unsafe operations. *(Note: Reported fixture execution times and token counts measure local test execution heuristics; live multi-turn cloud LLM evaluation is tracked for subsequent releases).*
+
+---
+
+## 4. Empirical Skill Optimization: Ablation Ladder Results
 
 Following the `agent-skill-optimization` scientific protocol, the system was evaluated across an expanded ablation ladder of **11 development and regression tasks (33 evaluations per rung)**:
 
@@ -116,11 +137,14 @@ Full experiment records and hypothesis diagnoses are documented in [`experiments
 
 ---
 
-## 4. Repository Layout
+## 5. Repository Layout
 
 ```text
 fullstack-deployment-skill/
-├── SKILL.md                           # Root orchestrator skill (v1.1)
+├── .github/
+│   └── workflows/ci.yml               # Multi-platform CI (Ubuntu & Windows matrix across Python 3.11/3.12)
+│
+├── SKILL.md                           # Root orchestrator skill (v1.2)
 │
 ├── provenance/                        # Upstream attribution & normalization
 │   ├── sources.yml                    # Attribution to Imad Saddik / freeCodeCamp
@@ -142,18 +166,19 @@ fullstack-deployment-skill/
 │   └── scripts/                       # clean_backups.sh, reload_nginx.sh, gunicorn_start.sh
 │
 ├── harness/                           # Deterministic Change Intelligence Harness
-│   ├── core.py                        # Execution budgets, turn manager, context gating
+│   ├── approvals.py                   # Out-of-band TrustedApprovalService (cryptographic HITL tokens)
+│   ├── core.py                        # Execution budgets, turn manager, context & contract gating
 │   ├── discovery.py                   # Dynamic repository fact extractors (Nginx, Supervisor, Systemd, Shell, .env)
 │   ├── graph.py                       # Directed multi-graph data structure with edge provenance
-│   ├── impact.py                      # Blast radius calculator & Declared vs. Discovered gap
+│   ├── impact.py                      # Blast radius calculator & canonical Declared vs. Discovered gap
 │   ├── context_builder.py             # Bounded context bundler (target + neighbors + invariants)
-│   ├── manifest.py                    # ChangeManifest schema, ID generation, amendment tracker
-│   ├── diff_guard.py                  # ChangeSurfaceGuard (surgical patch & rewrite boundary verifier)
-│   ├── contracts.py                   # Cross-artifact contract engine (ports, sockets, CIDRs, secrets)
+│   ├── manifest.py                    # Transactional ChangeManifest state machine & path canonicalizer
+│   ├── diff_guard.py                  # ChangeSurfaceGuard (canonical surgical patch boundary verifier)
+│   ├── contracts.py                   # Fail-closed cross-artifact contract engine (ports, sockets, CIDRs, secrets)
 │   ├── policy.py                      # Safety invariants, precondition verifiers
 │   ├── secrets.py                     # Secret masking boundary (<SECRET_REF_*>)
 │   ├── state.py                       # Checkpoint engine & atomic rollback manager
-│   └── tools.py                       # T0–T5 tiered tool contracts gated by manifest_id
+│   └── tools.py                       # T0–T5 tiered tool contracts with active host probes
 │
 ├── sandbox/                           # Layer A: Simulation Sandbox
 │   ├── mock_host.py                   # In-memory virtual Linux host
@@ -182,11 +207,11 @@ fullstack-deployment-skill/
 
 ---
 
-## 5. Quickstart & Verification
+## 6. Quickstart & Verification
 
 ### Running Automated Test Suites
 ```bash
-# Run unit & harness tests (12 tests passing)
+# Run unit & hardened security tests (13 tests passing)
 python -m unittest discover -s evaluation -p "test_*.py"
 
 # Run Layer A simulation sandbox tests (4 tests passing)
@@ -208,6 +233,6 @@ python sealed_evaluator/evaluate_candidate.py
 
 ---
 
-## 6. License & Attribution
+## 7. License & Attribution
 * Framework and Harness Code: **MIT License** (Copyright 2026 `kartorhys-ship-it`).
 * Deployment Curriculum & Core Knowledge: Extracted and normalized from **Imad Saddik / freeCodeCamp.org** under standard educational attribution. See [`provenance/sources.yml`](provenance/sources.yml).

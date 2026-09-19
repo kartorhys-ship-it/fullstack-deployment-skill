@@ -1,5 +1,6 @@
 {
   "suite": "sealed_frozen_eval",
+  "evaluation_mode": "fixture_simulation",
   "total_evaluations": 12,
   "total_passed": 12,
   "pass_rate": 1.0,

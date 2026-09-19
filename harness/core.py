@@ -1,21 +1,22 @@
 """Harness Core Orchestrator for Deterministic Change Intelligence.
 
 Coordinates structural discovery, blast-radius calculation, structured change manifests,
-change-surface validation, tiered execution budgets, and cross-artifact contract checks.
+change-surface validation, execution gating with contract enforcement, and tiered budgets.
 """
 
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from harness.secrets import SecretMasker
 from harness.state import StateManager
-from harness.tools import DeploymentTools
+from harness.tools import DeploymentTools, ToolContractError
 from harness.policy import PolicyEngine
 from harness.graph import DeploymentDependencyGraph
 from harness.discovery import discover_repository
-from harness.manifest import ManifestRegistry, ChangeManifest, ManifestValidationError
+from harness.manifest import ManifestRegistry, ChangeManifest, ManifestValidationError, ManifestStatus
 from harness.impact import ImpactAnalyzer, ManifestIncompleteError
 from harness.context_builder import ContextBuilder
-from harness.contracts import CrossArtifactContractEngine
+from harness.contracts import CrossArtifactContractEngine, ContractViolation
+from harness.approvals import TrustedApprovalService
 
 
 class HarnessExecutionBudgetExceeded(Exception):
@@ -34,7 +35,14 @@ class DeploymentHarness:
         self.state = StateManager()
         self.policy = PolicyEngine()
         self.manifest_registry = ManifestRegistry()
-        self.tools = DeploymentTools(self.secrets, self.state, self.manifest_registry)
+        self.approval_service = TrustedApprovalService()
+        self.tools = DeploymentTools(
+            self.secrets,
+            self.state,
+            self.manifest_registry,
+            self.approval_service,
+            repo_root=self.repo_root
+        )
 
         # Dynamic Discovery & Intelligence
         self.graph = discover_repository(self.repo_root)
@@ -65,12 +73,15 @@ class DeploymentHarness:
         full_rewrite: bool = False,
         rewrite_justification: Optional[str] = None
     ) -> ChangeManifest:
-        """Submits, validates impact against discovered dependencies, and freezes a ChangeManifest."""
+        """Transactionally submits, validates, and accepts a ChangeManifest.
+
+        If impact analysis or contracts fail, manifest is marked REJECTED and discarded.
+        """
         self.record_step(token_count=100)
         self.refresh_graph()
 
-        # 1. Register candidate manifest
-        manifest = self.manifest_registry.submit_manifest(
+        # 1. Create manifest in PENDING_VALIDATION state
+        manifest = self.manifest_registry.create_pending_manifest(
             intent=intent,
             targets=targets,
             expected_dependencies=expected_dependencies,
@@ -84,9 +95,18 @@ class DeploymentHarness:
         # 2. Check Declared vs. Discovered Impact Gap
         valid, err = self.impact_analyzer.verify_manifest_impact(manifest)
         if not valid and err:
+            self.manifest_registry.reject_manifest(manifest.manifest_id, str(err))
             raise err
 
-        return manifest
+        # 3. Fail-closed contract check
+        for inv in invariants:
+            res, rsn = self.contract_engine.verify_contract(inv)
+            if not res:
+                self.manifest_registry.reject_manifest(manifest.manifest_id, f"Contract failure: {rsn}")
+                raise ContractViolation(f"Manifest rejected due to contract failure on '{inv}': {rsn}")
+
+        # 4. Accept manifest
+        return self.manifest_registry.accept_manifest(manifest.manifest_id)
 
     def amend_change_manifest(
         self,
@@ -95,22 +115,30 @@ class DeploymentHarness:
         new_dependencies: Optional[List[str]] = None,
         amendment_reason: str = ""
     ) -> ChangeManifest:
-        """Amends an existing manifest. Automatically invalidates any prior HITL approvals."""
+        """Transactionally amends an existing manifest.
+
+        Clones candidate; if impact validation fails, rolls back amendment leaving original intact!
+        """
         self.record_step(token_count=50)
         self.refresh_graph()
-        manifest = self.manifest_registry.amend_manifest(
+
+        # 1. Stage candidate clone in AMENDING state
+        candidate = self.manifest_registry.stage_amendment(
             manifest_id=manifest_id,
             new_targets=new_targets,
             new_dependencies=new_dependencies,
             amendment_reason=amendment_reason
         )
 
-        # Re-verify impact
-        valid, err = self.impact_analyzer.verify_manifest_impact(manifest)
+        # 2. Verify candidate impact
+        valid, err = self.impact_analyzer.verify_manifest_impact(candidate)
         if not valid and err:
+            self.manifest_registry.rollback_amendment(manifest_id, str(err))
             raise err
 
-        return manifest
+        # 3. Commit amendment
+        accepted = self.manifest_registry.commit_amendment(manifest_id)
+        return accepted
 
     def record_step(self, token_count: int = 150):
         self.current_turns += 1
@@ -121,23 +149,38 @@ class DeploymentHarness:
             raise HarnessExecutionBudgetExceeded(f"Token budget of {self.max_tokens} tokens exceeded.")
 
     def execute_plan_step(self, tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """Validates safety invariants before executing any tool."""
+        """Validates safety invariants, manifest state, and contracts before executing any tool."""
         self.record_step()
 
-        # 1. Audit text payloads for raw secrets
+        # 1. Audit text payloads for raw secrets and dangerous commands
         for k, v in kwargs.items():
             if isinstance(v, str):
                 self.policy.inspect_for_raw_secrets(v)
                 self.policy.validate_command_safety(v)
 
-        # 2. Route to tiered tool contract
+        # 2. Enforcement Gate: For T3, T4, T5 tools, actively verify manifest invariants
+        if any(tool_name.startswith(prefix) for prefix in ("t3_", "t4_", "t5_")):
+            manifest_id = kwargs.get("manifest_id")
+            if not manifest_id:
+                raise ToolContractError(f"Operation '{tool_name}' blocked: Missing required 'manifest_id'.")
+
+            manifest = self.manifest_registry.get_manifest(manifest_id)
+            if not manifest or manifest.status != ManifestStatus.ACCEPTED:
+                raise ToolContractError(
+                    f"Operation '{tool_name}' blocked: Manifest '{manifest_id}' is not in ACCEPTED state."
+                )
+
+            # Actively enforce contracts before mutation
+            self.contract_engine.verify_all_invariants(manifest.invariants)
+
+        # 3. Route to tiered tool contract
         if not hasattr(self.tools, tool_name):
             raise AttributeError(f"Tool '{tool_name}' is not recognized in tiered contracts.")
 
         tool_method = getattr(self.tools, tool_name)
         result = tool_method(**kwargs)
 
-        # 3. Mask any accidental output leaks
+        # 4. Mask any accidental output leaks
         if isinstance(result, dict):
             for k, v in result.items():
                 if isinstance(v, str):
