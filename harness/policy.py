@@ -16,7 +16,7 @@ class PreconditionFailure(Exception):
 class PolicyEngine:
     PROHIBITED_COMMAND_PATTERNS = [
         (r'rm\s+-rf\s+/(?:$|\s)', "Prohibited: root directory deletion"),
-        (r'rm\s+-rf\s+/var/www(?:$|\s)', "Prohibited: total application directory deletion"),
+        (r'rm\s+-rf\s+/var/www(?:$|\s|/)', "Prohibited: total application directory deletion"),
         (r'chmod\s+777\b', "Prohibited: world-writable permissions (0777)"),
         (r'chmod\s+666\b', "Prohibited: world-writable file permissions (0666)"),
         (r'set_real_ip_from\s+0\.0\.0\.0/0', "Prohibited: trusting all IPs for real-IP header"),
@@ -25,7 +25,11 @@ class PolicyEngine:
         (r'PasswordAuthentication\s+yes\b', "Prohibited: password authentication over SSH")
     ]
 
-    SECRET_PATTERN = re.compile(r'(?:password|secret|key|token)\s*[:=]\s*["\']?(?!(?:<SECRET_REF_[A-Z0-9_]+>))[A-Za-z0-9+/=_\-]{8,}', re.IGNORECASE)
+    SECRET_PATTERN = re.compile(
+        r'(?:(?:password|secret|key|token|database_url|db_pass)\s*[:=]\s*["\']?(?!(?:<SECRET_REF_[A-Z0-9_]+>))[^\s"\']{6,})|'
+        r'(?:://[^:]+:(?!(?:<SECRET_REF_[A-Z0-9_]+>))[^@\s]+@)',
+        re.IGNORECASE
+    )
 
     @classmethod
     def validate_command_safety(cls, command_string: str) -> None:

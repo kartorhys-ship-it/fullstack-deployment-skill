@@ -3,8 +3,12 @@ Sealed Evaluator Runner
 Executes frozen evaluation tasks in isolation without leaking task diagnostics or prompts.
 """
 import time
+import os
+import sys
 import statistics
 from typing import Callable, Dict, Any, List
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from sealed_evaluator.frozen_tasks.task_01_meilisearch_systemd import TASK_PROMPT as P1, evaluate as E1
 from sealed_evaluator.frozen_tasks.task_02_least_privilege_visudo import TASK_PROMPT as P2, evaluate as E2
