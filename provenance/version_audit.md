@@ -16,13 +16,13 @@ This document details the fidelity and compatibility audit performed on the depl
 
 ## 2. Nginx Reverse Proxy Modernization
 
-* **HTTP/2 Syntax Deprecation**:
-  - *Legacy*: `listen 443 ssl http2;`
-  - *Audit Finding*: Deprecated in Nginx 1.25.1+. Emits warnings on modern Nginx.
-  - *Normalized Directive*:
+* **HTTP/2 Syntax Deprecation & Distro Compatibility**:
+  - *Context*: Nginx 1.25.1 introduced the standalone `http2 on;` directive and deprecated the `listen ... http2` parameter.
+  - *Distro Reality Check*: The default package repository in **Ubuntu 24.04 LTS (Noble Numbat)** provides **Nginx 1.24.0**, which does NOT support `http2 on;` and will fail validation (`nginx -t`) with `unknown directive "http2"`.
+  - *Normalized Invariant*: To guarantee out-of-the-box syntax compatibility across stock Ubuntu LTS distributions (Ubuntu 22.04 LTS and 24.04 LTS) without requiring external mainline PPAs, production templates use:
     ```nginx
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     ```
 * **Cloudflare Real-IP Restoration**:
   - *Critical Security Invariant*: Trusting `CF-Connecting-IP` without restricting `set_real_ip_from` to Cloudflare's exact public IP blocks allows malicious clients to spoof any arbitrary IP in requests directly to the origin.

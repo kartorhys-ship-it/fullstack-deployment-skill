@@ -210,11 +210,17 @@ class AgentToolGateway:
     def amend_manifest(
         self,
         manifest_id: str,
-        added_targets: List[str],
-        added_invariants: Optional[List[str]] = None
+        added_targets: Optional[List[str]] = None,
+        added_dependencies: Optional[List[str]] = None,
+        amendment_reason: str = ""
     ) -> ChangeManifest:
         """Amends an existing manifest, recalculating blast radius and invalidating prior approvals."""
-        return self._harness.amend_change_manifest(manifest_id, added_targets, added_invariants)
+        return self._harness.amend_change_manifest(
+            manifest_id=manifest_id,
+            new_targets=added_targets,
+            new_dependencies=added_dependencies,
+            amendment_reason=amendment_reason
+        )
 
     def assemble_context(self, task: str, target_files: List[str]) -> Dict[str, Any]:
         """Assembles structurally bounded context with graph neighbors and invariant rules."""

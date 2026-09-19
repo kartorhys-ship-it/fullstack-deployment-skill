@@ -198,10 +198,10 @@ fullstack-deployment-skill/
 │   ├── development/                   # Dev benchmarks 01–09 (OOM, CF spoof, atomic rollback, port drift, scope creep, socket migration, manifest gap)
 │   └── regression/                    # Regression suite (UFW lockdown, SSH root prohibition)
 │
-├── sealed_evaluator/                  # Sealed Frozen Evaluation (Isolated)
+├── sealed_evaluator/                  # Isolated Benchmark Evaluator
 │   ├── runner.py                      # Opaque runner returning aggregate metrics only
 │   ├── evaluate_candidate.py          # Post-lock evaluation runner
-│   └── frozen_tasks/                  # Isolated unseen tasks
+│   └── frozen_tasks/                  # Immutable benchmark tasks
 │
 └── experiments/                       # Empirical optimization evidence
     ├── baseline/                      # B0, B1, B2 baseline JSON runs
@@ -215,7 +215,7 @@ fullstack-deployment-skill/
 
 ### Running Automated Test Suites
 ```bash
-# Run unit & hardened security tests (13 tests passing)
+# Run unit & hardened security tests (20 tests passing)
 python -m unittest discover -s evaluation -p "test_*.py"
 
 # Run Layer A simulation sandbox tests (4 tests passing)
@@ -230,7 +230,7 @@ python -m unittest discover -s integration -p "test_*.py"
 python evaluation/runner.py
 ```
 
-### Running the Sealed Frozen Evaluator
+### Running the Isolated Benchmark Evaluator
 ```bash
 python sealed_evaluator/evaluate_candidate.py
 ```

@@ -95,10 +95,29 @@ class TestHardenedToolContracts(unittest.TestCase):
         with self.assertRaises(ToolContractError):
             self.harness.tools.t4_reload_nginx()
 
-        # With accepted manifest_id, trusted probe runs syntax check and passes
+        # Without a verified rollback checkpoint, T4 MUST fail precondition
+        with self.assertRaises(PreconditionFailure):
+            self.harness.tools.t4_reload_nginx(manifest_id=self.manifest.manifest_id)
+
+        # Once a discrete state checkpoint is created, trusted probe passes
+        self.harness.state.create_checkpoint("Pre-reload safety checkpoint", {})
         res = self.harness.tools.t4_reload_nginx(manifest_id=self.manifest.manifest_id)
         self.assertEqual(res["status"], "reloaded_cleanly")
         self.assertTrue(res.get("syntax_probed_ok"))
+
+    def test_gateway_manifest_amendment(self):
+        """Tests agent capability gateway facade for transactional manifest amendments."""
+        status = self.harness.gateway.get_manifest_status(self.manifest.manifest_id)
+        self.assertEqual(status, ManifestStatus.ACCEPTED.value)
+
+        amended = self.harness.gateway.amend_manifest(
+            manifest_id=self.manifest.manifest_id,
+            added_targets=["templates/nginx/security-headers.conf"],
+            amendment_reason="Include security headers to active change scope"
+        )
+        self.assertEqual(amended.version, 2)
+        self.assertIn("templates/nginx/security-headers.conf", amended.targets)
+        self.assertEqual(amended.status, ManifestStatus.ACCEPTED)
 
     def test_t5_trusted_hitl_authorization(self):
         # T5 without out-of-band human approval MUST raise HumanApprovalRequired

@@ -8,6 +8,7 @@ Security Invariants:
 5. No self-authorization methods exist on the agent tool surface.
 """
 
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 from harness.policy import PolicyViolation, PreconditionFailure
@@ -61,7 +62,12 @@ class RepositoryHeuristicProbeAdapter(HostProbeAdapter):
 
     def rollback_ready(self) -> bool:
         checkpoints = getattr(self.state, "checkpoints", getattr(self.state, "_checkpoints", []))
-        return len(checkpoints) > 0 or (self.repo_root / "templates").exists()
+        if len(checkpoints) > 0:
+            return True
+        previous_link = getattr(self.state, "previous_link", None)
+        if previous_link and (os.path.islink(previous_link) or os.path.exists(previous_link)):
+            return True
+        return False
 
     def ssh_firewall_allowed(self) -> bool:
         for f in self.repo_root.glob("**/*"):
