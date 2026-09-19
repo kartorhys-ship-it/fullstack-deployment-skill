@@ -1,55 +1,65 @@
-# AI-Assisted Deployment System
+# Full-Stack Deployment Engineering System
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Ubuntu LTS](https://img.shields.io/badge/Platform-Ubuntu%2024.04%20%7C%2022.04%20LTS-orange.svg)]()
-[![Architecture: LLM Proposes, Determinism Enforces](https://img.shields.io/badge/Architecture-Harness--Enforced-blue.svg)]()
+[![Architecture: Deterministic Change Intelligence](https://img.shields.io/badge/Architecture-Change--Intelligence--Harness-blue.svg)]()
 [![Evaluator: Sealed Benchmark](https://img.shields.io/badge/Benchmark-Sealed%20Evaluator-brightgreen.svg)]()
 
-An empirical, production-grade DevOps framework and modular AI agent skill for automated, zero-downtime full-stack web application deployments on Ubuntu Linux (FastAPI, Node.js/Vite, Nginx, Meilisearch, Cloudflare CDN, and GitHub Actions CI/CD).
+An empirical, production-grade DevOps deployment engineering system and modular AI agent skill for automated, zero-downtime full-stack web application deployments on Ubuntu Linux (FastAPI, Node.js/Vite, Nginx, Meilisearch, Cloudflare CDN, and GitHub Actions CI/CD).
 
-Extracted, audited, and normalized from the 10.4-hour course *"How to Deploy, Secure, and Automate Full-Stack Web Apps"* by **Imad Saddik / freeCodeCamp.org**, this system operationalizes deep infrastructure knowledge inside an **AI Harness Architecture** with an **Empirical Skill Optimization** benchmark suite.
+Extracted from the 10.4-hour course *"How to Deploy, Secure, and Automate Full-Stack Web Apps"* by **Imad Saddik / freeCodeCamp.org** and augmented with **Deterministic Change Intelligence**, this system breaks the self-reinforcing failure loop of AI-generated infrastructure through structural discovery, graph impact analysis, Change Manifest gating, and cross-artifact contract enforcement.
 
 ---
 
-## 1. Architectural Core: The LLM Proposes, Determinism Enforces
+## 1. Central Architectural Principle
 
-In conventional AI coding setups, agents are given raw terminal execution privileges. In a production infrastructure environment, a single hallucinated command (`rm -rf`, premature `ufw enable`, or an invalid `nginx.conf`) can cause catastrophic server lockout or data destruction.
+> **Structure selects context.**  
+> **The LLM proposes change.**  
+> **Determinism measures impact.**  
+> **Contracts enforce correctness.**  
+> **Tests prove behavior.**  
+> **Humans authorize irreversible risk.**
 
-This system treats the LLM as fallible and untrusted:
+In conventional AI coding setups, agents are given raw terminal execution privileges or prompted to rewrite entire config files. In deployment engineering, there is no single compiler AST: the ecosystem spans Nginx configs, Systemd units, Supervisor INIs, shell scripts, `.env` files, UFW firewalls, and Cloudflare edge policies.
+
+This system wraps the LLM with **Deterministic Change Intelligence**:
 
 ```mermaid
 flowchart TD
-    subgraph AgenticLayer["Agentic Layer (Untrusted)"]
-        A[SKILL.md Orchestrator] --> B[LLM Reasoning & Planning]
-        B --> C["Proposed Action Plan\n(Abstract <SECRET_REF_*> Tokens)"]
+    subgraph DiscoveryLayer["1. Structural Discovery & Context (Deterministic)"]
+        A[Repository Files] --> B["discovery.py\n(Dynamic Fact Extraction)"]
+        B --> C["graph.py\n(Explainable Directed Multi-Graph)"]
+        C --> D["impact.py\n(Blast Radius Calculator)"]
+        D --> E["context_builder.py\n(Task + Target + Graph Neighbors + Invariants)"]
     end
 
-    subgraph DeterministicHarness["Deterministic Harness & Policy Layer"]
-        C --> D{Policy & Guardrail Gate}
-        D -- "Violates Safety / Missing Preconditions" --> E["Blocked & Feedback Returned"]
-        D -- "Preconditions Satisfied" --> F[Tiered Tool Router]
-        
-        subgraph ToolTiers["Tiered Tool Contracts (T0-T5)"]
-            F --> T0["T0: Pure Computation\n(Worker sizing, formatting)"]
-            F --> T1["T1: Read-Only Inspection\n(Service status, log view)"]
-            F --> T2["T2: Staged Modification\n(Isolated /releases/<ts> stage)"]
-            F --> T3["T3: Reversible State Change\n(Atomic symlink swap + Checkpoint)"]
-            F --> T4["T4: Availability-Affecting\n(Nginx reload, Supervisor restart)"]
-            F --> T5["T5: Destructive / Lockout\n(Purge backups, UFW enable)\n[HITL Human Approval Gate]"]
-        end
+    subgraph AgenticLayer["2. Agent LLM (Untrusted Planner)"]
+        E --> F["Agent LLM\n(Proposes Change Manifest + Surgical Diff)"]
     end
 
-    subgraph VerificationEngine["Verification & Recovery Engine"]
-        T3 --> V1[Pre-execution Checkpoint]
-        T4 --> V2[Syntax Test: nginx -t / sshd -t]
-        V2 --> V3[Post-Deploy Health Check]
-        V3 -- "Health Check Passed" --> S1[Deployment Successful]
-        V3 -- "Health Check Failed" --> S2["Instant Atomic Rollback\n(ln -sfn previous current)"]
+    subgraph GatekeeperLayer["3. Change Control & Guardrails (Deterministic)"]
+        F --> G{"submit_change_manifest()"}
+        G -- "Declared vs Discovered Gap" --> H["MANIFEST_INCOMPLETE\n(Requires amend_change_manifest)"]
+        G -- "Manifest Accepted" --> I["Frozen manifest_id Issued"]
+        I --> J["diff_guard.py\n(Change Surface Guard: No unannounced rewrites)"]
+        J --> K["policy.py\n(Command & Secret Inspection)"]
     end
 
-    subgraph Testbeds["Dual Verification Testbeds"]
-        T1 -.-> L1["Layer A: Simulation Sandbox\n(In-memory host, HTTP & CSP mock)"]
-        T4 -.-> L2["Layer B: Native Linux Container\n(Ubuntu 24.04 LTS real binaries)"]
+    subgraph ExecutionLayer["4. Tiered Tool Contracts (T0-T5)"]
+        K --> L{Tier Router}
+        L --> T0["T0: Pure Computation\n(No manifest)"]
+        L --> T1["T1: Read-Only Inspection\n(No manifest)"]
+        L --> T2["T2: Staged Modification\n(Requires manifest_id)"]
+        L --> T3["T3: Reversible Symlink Switch\n(Requires manifest_id)"]
+        L --> T4["T4: Availability-Affecting Reload\n(Requires manifest_id + Preconditions)"]
+        L --> T5["T5: Destructive / Lockout\n(Requires manifest_id + HITL Approval)"]
+    end
+
+    subgraph VerificationLayer["5. Cross-Artifact Contract Engine & Recovery"]
+        T3 & T4 --> M["contracts.py\n(Port consistency, Socket permissions, Cloudflare trust)"]
+        M --> V1[Post-Deployment Health Check]
+        V1 -- "Health Check Passed" --> S1[Deployment Successful & Verified]
+        V1 -- "Health Check Failed" --> S2["Instant Atomic Rollback\n(ln -sfn previous current)"]
     end
 ```
 
@@ -57,46 +67,50 @@ flowchart TD
 
 ## 2. Key System Capabilities
 
-### 🛡️ Tiered Tool Contracts (T0–T5) with Human-in-the-Loop Gate
-Every action is mapped to an explicit risk tier:
-* **T0 (Pure Computation)**: Sizing heuristics, formatting, calculations.
-* **T1 (Read-Only)**: Non-mutating system inspections (`inspect_service`, `view_logs`).
-* **T2 (Staged Modification)**: File generation inside isolated directories.
-* **T3 (Reversible State Change)**: Symlink switching with automated pre-cutover checkpoints.
-* **T4 (Availability-Affecting)**: Service restarts requiring verified preconditions (`nginx_configuration_valid`, `backup_exists`).
-* **T5 (Destructive / Lockout-Capable)**: Permanent snapshot purging, UFW activation, or user deletion requiring explicit **Human-in-the-Loop (HITL)** approval tokens.
-
-### 🔐 Zero-Trust Secret Masking Boundary
-The agent operates strictly on abstract placeholders (`<SECRET_REF_DATABASE_URL>`, `<SECRET_REF_MEILI_MASTER_KEY>`). The deterministic harness layer resolves values at execution time. Real credentials never appear in model prompts, agent traces, git history, or logs.
-
-### 🔄 Zero-Downtime Atomic Cutover & Automated Rollback
-Enforces an atomic 7-step deployment state machine:
+### 🔍 1. Explainable Deployment Dependency Graph (`harness/graph.py` & `discovery.py`)
+Rather than relying on static YAML declarations or unexplainable embeddings, the harness dynamically parses the repository on every run, constructing an explainable directed multi-graph where every edge carries concrete provenance:
 ```text
-/var/www/webapp/
-├── current -> releases/20260919_120000   (Active release)
-├── previous -> releases/20260919_110000  (Fallback pointer)
-├── shared/                               (.env, sockets, logs)
-└── releases/                             (Immutable timestamped builds)
+nginx:upstream:webapp_backend --forwards_to--> socket:/var/www/webapp/shared/run/gunicorn.sock
+  origin: discovered
+  evidence: [templates/nginx/fullstack-app.conf:4 via nginx_upstream_server]
 ```
-If post-deployment health checks fail, the harness immediately reverts `current -> previous` and triggers rolling service restarts automatically.
 
-### 🌐 Edge Security & Anti-Spoofing
-Restricts Nginx `set_real_ip_from` strictly to Cloudflare's published IP ranges. Adversarial direct connections attempting to forge `CF-Connecting-IP` headers are rejected.
+### 📋 2. Structured Change Manifests & The Impact Gap (`harness/manifest.py` & `impact.py`)
+No state-modifying action (T2–T5) can execute without an accepted, frozen `manifest_id`:
+* **Declared vs. Discovered Gap**: If an agent attempts to modify a shared backend port across Nginx and Supervisor but omits `healthcheck.sh`, `impact.py` intercepts the mutation before execution with `MANIFEST_INCOMPLETE`.
+* **Scope Amendment & HITL Invalidation**: Calling `amend_change_manifest()` recalculates contracts and automatically revokes any previous Human-in-the-Loop authorization.
+
+### 🛡️ 3. Change Surface Guard (`harness/diff_guard.py`)
+Replaces arbitrary `<25%` diff limits with semantic discipline:
+* Rejects mutations of files outside the declared manifest targets.
+* Rejects unannounced full-file rewrites when `full_rewrite=False`.
+* Strictly prevents accidental deletion of Nginx `security-headers.conf` inclusions or SSL certificate directives during surgical edits.
+
+### ⚡ 4. Cross-Artifact Contract Engine (`harness/contracts.py`)
+Deterministically validates cross-service boundaries before reload:
+* `backend_port_consistency`: Gunicorn bind == Supervisor command == Nginx upstream == Healthcheck.
+* `socket_permission_consistency`: Unix socket creation includes `chown deployer:www-data` group permissions.
+* `cloudflare_real_ip_trust`: Restricts `set_real_ip_from` strictly to verified Cloudflare CIDRs, blocking direct client spoofing.
+* `secret_reference_integrity`: Guarantees all credentials use `<SECRET_REF_*>` tokens with no raw secret leaks or orphaned references.
 
 ---
 
 ## 3. Empirical Skill Optimization: Ablation Ladder Results
 
-Following the `agent-skill-optimization` scientific protocol, the system was evaluated across an ablation ladder to isolate the exact performance contributions of knowledge, harness constraints, and iterative optimization:
+Following the `agent-skill-optimization` scientific protocol, the system was evaluated across an expanded ablation ladder of **11 development and regression tasks (33 evaluations per rung)**:
 
 | Metric | B0: Bare Agent | B1: SKILL v0.1 | B2: SKILL v0.1 + Harness | C1: Candidate 001 (Optimized) | Sealed Frozen Eval (Unseen) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Development Task Success** | 0.0% (0/18) | 83.3% (15/18) | 83.3% (15/18) | **100.0% (18/18)** | **100.0% (12/12)** |
-| **Hard Safety Compliance** | 33.3% (12 violations) | 100.0% (0 violations) | **100.0% (0 violations)** | **100.0% (0 violations)** | **100.0% (0 violations)** |
-| **Median Latency** | 0.050 s | 0.080 s | 0.090 s | 0.100 s | 0.001 s |
-| **Median Tokens** | 15 tokens | 29 tokens | 29 tokens | 67 tokens | 56 tokens |
+| **Development Task Success** | 0.0% (0/33) | 90.9% (30/33) | 90.9% (30/33) | **100.0% (33/33)** | **100.0% (12/12)** |
+| **Hard Safety Compliance** | 54.5% (15 violations) | 100.0% (0 violations) | **100.0% (0 violations)** | **100.0% (0 violations)** | **100.0% (0 violations)** |
+| **Median Latency** | 0.020 s | 0.040 s | 0.050 s | 0.101 s | 0.000 s |
+| **Median Tokens** | 14 tokens | 19 tokens | 19 tokens | 22 tokens | 56 tokens |
 
-> **Key Takeaway**: Base pretraining (B0) failed 100% of deployment tasks and committed 12 critical safety violations (e.g. `chmod 777`, premature firewall lockouts, IP spoofing vulnerabilities). Introducing the structured knowledge base (B1) jumped completion to 83.3%, the deterministic harness (B2) guaranteed hard safety gates, and bounded candidate patching (C1) achieved 100% development and 100% sealed frozen evaluation pass rates.
+### Key Findings:
+1. **B0 (Bare Agent)** failed 100% of tasks, committing 15 critical safety violations (e.g. `chmod 777`, premature firewall lockouts, IP spoofing vulnerabilities, cross-file port drift, and raw secret leaks).
+2. **B1 (SKILL v0.1)** achieved 90.9% task success and 100% safety compliance, but failed complex multi-step state rollbacks.
+3. **B2 (SKILL v0.1 + Harness)** added pre-execution guardrails and T0–T5 contracts.
+4. **C1 (Optimized Candidate)** achieved **100.0% task success** across all 11 development tasks and **100.0% on the isolated sealed frozen evaluation suite** (12/12 test executions passing with 0 violations).
 
 Full experiment records and hypothesis diagnoses are documented in [`experiments/experiment_log.md`](experiments/experiment_log.md).
 
@@ -106,7 +120,7 @@ Full experiment records and hypothesis diagnoses are documented in [`experiments
 
 ```text
 fullstack-deployment-skill/
-├── SKILL.md                           # Root orchestrator skill (v1.0)
+├── SKILL.md                           # Root orchestrator skill (v1.1)
 │
 ├── provenance/                        # Upstream attribution & normalization
 │   ├── sources.yml                    # Attribution to Imad Saddik / freeCodeCamp
@@ -127,12 +141,19 @@ fullstack-deployment-skill/
 │   ├── cicd/                          # deploy.yml, ci.yml, daily-security-scan.yml
 │   └── scripts/                       # clean_backups.sh, reload_nginx.sh, gunicorn_start.sh
 │
-├── harness/                           # Deterministic Harness Architecture
+├── harness/                           # Deterministic Change Intelligence Harness
 │   ├── core.py                        # Execution budgets, turn manager, context gating
+│   ├── discovery.py                   # Dynamic repository fact extractors (Nginx, Supervisor, Systemd, Shell, .env)
+│   ├── graph.py                       # Directed multi-graph data structure with edge provenance
+│   ├── impact.py                      # Blast radius calculator & Declared vs. Discovered gap
+│   ├── context_builder.py             # Bounded context bundler (target + neighbors + invariants)
+│   ├── manifest.py                    # ChangeManifest schema, ID generation, amendment tracker
+│   ├── diff_guard.py                  # ChangeSurfaceGuard (surgical patch & rewrite boundary verifier)
+│   ├── contracts.py                   # Cross-artifact contract engine (ports, sockets, CIDRs, secrets)
 │   ├── policy.py                      # Safety invariants, precondition verifiers
 │   ├── secrets.py                     # Secret masking boundary (<SECRET_REF_*>)
 │   ├── state.py                       # Checkpoint engine & atomic rollback manager
-│   └── tools.py                       # T0–T5 tiered tool contracts with HITL gates
+│   └── tools.py                       # T0–T5 tiered tool contracts gated by manifest_id
 │
 ├── sandbox/                           # Layer A: Simulation Sandbox
 │   ├── mock_host.py                   # In-memory virtual Linux host
@@ -145,7 +166,7 @@ fullstack-deployment-skill/
 │   └── test_native_linux.py           # Native Linux runner
 │
 ├── benchmarks/                        # Public Evaluation Benchmarks
-│   ├── development/                   # Dev benchmarks (OOM swap, CF spoofing, atomic rollback)
+│   ├── development/                   # Dev benchmarks 01–09 (OOM, CF spoof, atomic rollback, port drift, scope creep, socket migration, manifest gap)
 │   └── regression/                    # Regression suite (UFW lockdown, SSH root prohibition)
 │
 ├── sealed_evaluator/                  # Sealed Frozen Evaluation (Isolated)
@@ -165,10 +186,10 @@ fullstack-deployment-skill/
 
 ### Running Automated Test Suites
 ```bash
-# Run unit & harness tests
+# Run unit & harness tests (12 tests passing)
 python -m unittest discover -s evaluation -p "test_*.py"
 
-# Run Layer A simulation sandbox tests
+# Run Layer A simulation sandbox tests (4 tests passing)
 python -m unittest discover -s sandbox -p "test_*.py"
 
 # Run Layer B native Linux integration checks
@@ -185,44 +206,8 @@ python evaluation/runner.py
 python sealed_evaluator/evaluate_candidate.py
 ```
 
-### Running Native Linux Verification via Docker
-```bash
-docker build -t deployment-verifier integration/
-docker run --rm deployment-verifier
-```
-
 ---
 
-## 6. How to Push to Your GitHub Portfolio
-
-To publish this repository under your GitHub account (**[kartorhys-ship-it](https://github.com/kartorhys-ship-it)**):
-
-1. **Create the repository on GitHub**:
-   - Go to [github.com/new](https://github.com/new)
-   - Repository name: **`fullstack-deployment-skill`**
-   - Description: *AI-Assisted Deployment System & Empirical Skill Optimization for Ubuntu, Nginx, and CI/CD*
-   - Visibility: **Public**
-   - **Important**: Do **NOT** check "Add a README file", ".gitignore template", or "License" (the repository already contains all 12 commits, license, and documentation).
-
-2. **Push to GitHub**:
-   The remote origin is already pre-configured to `https://github.com/kartorhys-ship-it/fullstack-deployment-skill.git`. Simply run:
-   ```bash
-   cd "C:\Antigravity Projects\fullstack-deployment-skill"
-   git push -u origin main --tags
-   ```
-
-All 12 atomic commits, experiment memory, and the `v1.0.0` release tag will be published to your GitHub profile!
-
----
-
-## 7. Provenance & Attribution
-
-* **Maintainer / Author**: [kartorhys-ship-it](https://github.com/kartorhys-ship-it)
-* **License**: [MIT License](LICENSE)
-
-Upstream instructional knowledge, deployment architectures, and reference templates are derived from:
-* **Course**: *"How to Deploy, Secure, and Automate Full-Stack Web Apps - Course for Beginners"* by **Imad Saddik** / **freeCodeCamp.org** ([YouTube](https://www.youtube.com/watch?v=wY5pQOTsGaA)).
-* **Handbook**: [FullStackDeploymentHandbook](https://github.com/ImadSaddik/FullStackDeploymentHandbook) by Imad Saddik.
-* **Website Reference**: [ImadSaddikWebsite](https://github.com/ImadSaddik/ImadSaddikWebsite) by Imad Saddik.
-
-Full transformation notes, licensing audits, and version normalization records are cataloged in [`provenance/sources.yml`](provenance/sources.yml) and [`provenance/version_audit.md`](provenance/version_audit.md).
+## 6. License & Attribution
+* Framework and Harness Code: **MIT License** (Copyright 2026 `kartorhys-ship-it`).
+* Deployment Curriculum & Core Knowledge: Extracted and normalized from **Imad Saddik / freeCodeCamp.org** under standard educational attribution. See [`provenance/sources.yml`](provenance/sources.yml).
