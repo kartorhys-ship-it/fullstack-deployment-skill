@@ -1,0 +1,109 @@
+name: Zero-Downtime Production Deployment
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: production_deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to Host via Atomic Cutover
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+          USER: ${{ secrets.SSH_USER }}
+        run: |
+          RELEASE_TS=$(date +%Y%m%d_%H%M%S)
+          echo "Starting atomic deployment with release timestamp: $RELEASE_TS"
+          
+          ssh -o StrictHostKeyChecking=accept-new "$USER@$HOST" << EOF
+            set -euo pipefail
+            
+            BASE_DIR="/var/www/webapp"
+            RELEASES_DIR="\$BASE_DIR/releases"
+            RELEASE_DIR="\$RELEASES_DIR/$RELEASE_TS"
+            SHARED_DIR="\$BASE_DIR/shared"
+            
+            # 1. Create new release directory
+            mkdir -p "\$RELEASE_DIR"
+            
+            # 2. Sync code (exclude git, cache, temp)
+            # Code is transferred via rsync / git archive
+          EOF
+          
+          # Rsync build artifacts to the remote release directory
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '__pycache__' \
+            ./ "$USER@$HOST:/var/www/webapp/releases/$RELEASE_TS/"
+
+          ssh "$USER@$HOST" << EOF
+            set -euo pipefail
+            
+            BASE_DIR="/var/www/webapp"
+            RELEASE_DIR="\$BASE_DIR/releases/$RELEASE_TS"
+            SHARED_DIR="\$BASE_DIR/shared"
+            CURRENT_LINK="\$BASE_DIR/current"
+            PREVIOUS_LINK="\$BASE_DIR/previous"
+            
+            # 3. Setup Python venv
+            cd "\$RELEASE_DIR/backend"
+            python3 -m venv .venv
+            source .venv/bin/activate
+            pip install --no-cache-dir -r requirements.txt
+            
+            # 4. Link shared .env and run/log directories
+            ln -sfn "\$SHARED_DIR/.env" "\$RELEASE_DIR/backend/.env"
+            
+            # 5. Pre-cutover validation
+            echo "Validating syntax before cutover..."
+            python3 -c "import main; print('FastAPI module syntax OK')"
+            
+            # 6. Save pointer to previous release
+            if [ -L "\$CURRENT_LINK" ]; then
+              OLD_TARGET=\$(readlink -f "\$CURRENT_LINK")
+              ln -sfn "\$OLD_TARGET" "\$PREVIOUS_LINK"
+            fi
+            
+            # 7. Atomic cutover
+            ln -sfn "\$RELEASE_DIR" "\$CURRENT_LINK"
+            
+            # 8. Graceful service reload
+            sudo supervisorctl restart webapp
+            sudo nginx -t && sudo systemctl reload nginx
+            
+            # 9. Post-deployment health check with automated rollback
+            echo "Running health check..."
+            sleep 3
+            if ! curl -sf http://127.0.0.1/api/health > /dev/null; then
+              echo "CRITICAL: Health check failed! Initiating rollback..."
+              if [ -L "\$PREVIOUS_LINK" ]; then
+                PREV_TARGET=\$(readlink -f "\$PREVIOUS_LINK")
+                ln -sfn "\$PREV_TARGET" "\$CURRENT_LINK"
+                sudo supervisorctl restart webapp
+                sudo systemctl reload nginx
+                echo "Rollback to \$PREV_TARGET completed."
+              fi
+              exit 1
+            fi
+            
+            echo "Deployment successfully verified."
+            
+            # 10. Prune old releases (keep latest 5)
+            cd "\$RELEASES_DIR"
+            ls -1dt 20* | tail -n +6 | xargs -r rm -rf
+          EOF

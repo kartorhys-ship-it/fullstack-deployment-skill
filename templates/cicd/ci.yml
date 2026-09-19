@@ -1,0 +1,48 @@
+name: Continuous Integration Quality Gates
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  backend-lint-and-sast:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run Bandit SAST Security Scan
+        run: |
+          pip install bandit
+          bandit -r backend/ -lll
+
+  backend-sca-vulnerabilities:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run Pip-Audit Dependency Vulnerability Check
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt
+
+  frontend-build-and-lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node & pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - name: Install dependencies & build
+        run: |
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm build
