@@ -1,0 +1,85 @@
+# Provenance and Upstream Licensing Audit
+schema_version: "1.0"
+project_name: "AI-Assisted Deployment System"
+last_audited: "2026-09-19"
+
+upstream_sources:
+  - id: "freecodecamp-fullstack-course"
+    title: "How to Deploy, Secure, and Automate Full-Stack Web Apps - Course for Beginners"
+    author: "Imad Saddik"
+    publisher: "freeCodeCamp.org"
+    url: "https://www.youtube.com/watch?v=wY5pQOTsGaA"
+    duration_seconds: 37750
+    publication_year: 2024
+    role: "Primary audiovisual instruction and operational rationale"
+
+  - id: "handbook-repo"
+    title: "FullStackDeploymentHandbook"
+    author: "Imad Saddik"
+    url: "https://github.com/ImadSaddik/FullStackDeploymentHandbook"
+    license: "MIT"
+    role: "Reference curriculum, chapter writeups, and command sequences"
+
+  - id: "website-repo"
+    title: "ImadSaddikWebsite"
+    author: "Imad Saddik"
+    url: "https://github.com/ImadSaddik/ImadSaddikWebsite"
+    license: "MIT"
+    role: "Production infrastructure files, supervisor configs, systemd services, GitHub Actions workflows"
+
+derived_assets:
+  - artifact: "templates/nginx/fullstack-app.conf"
+    origin: "ImadSaddikWebsite:infrastructure/nginx/"
+    author: "Imad Saddik"
+    transformed: true
+    source_license: "MIT"
+    notes: "Updated with modern Nginx 1.25+ 'http2 on;' directive, Cloudflare real-IP trust CIDRs, and SPA fallback."
+
+  - artifact: "templates/nginx/security-headers.conf"
+    origin: "ImadSaddikWebsite:infrastructure/nginx/"
+    author: "Imad Saddik"
+    transformed: true
+    source_license: "MIT"
+    notes: "Enhanced with dynamic CSP nonce placeholder and strict HSTS preload directive."
+
+  - artifact: "templates/supervisor/webapp.conf"
+    origin: "ImadSaddikWebsite:infrastructure/supervisor/"
+    author: "Imad Saddik"
+    transformed: true
+    source_license: "MIT"
+    notes: "Ensures stopsignal=QUIT, stopasgroup=true, killasgroup=true to prevent zombie worker processes."
+
+  - artifact: "templates/systemd/meilisearch.service"
+    origin: "FullStackDeploymentHandbook:book/03_data-and-search.md"
+    author: "Imad Saddik"
+    transformed: true
+    source_license: "MIT"
+    notes: "Systemd unit hardened with system user isolation, NoNewPrivileges=true, and environment file master key loading."
+
+  - artifact: "templates/cicd/deploy.yml"
+    origin: "ImadSaddikWebsite:.github/workflows/deploy.yml"
+    author: "Imad Saddik"
+    transformed: true
+    source_license: "MIT"
+    notes: "Extended with strict precondition checks, atomic symlink cutover, pre/post deploy health checks, and automated rollback."
+
+newly_authored_assets:
+  - component: "harness/"
+    description: "Deterministic AI harness architecture, policy engine, T0-T5 tool contracts, secret masking boundary, and state manager."
+    license: "MIT"
+    author: "Antigravity Project Authors"
+
+  - component: "sandbox/"
+    description: "Layer A fast in-memory Linux environment simulator and behavioral HTTP verifier."
+    license: "MIT"
+    author: "Antigravity Project Authors"
+
+  - component: "integration/"
+    description: "Layer B Ubuntu 24.04 container definition and native Linux syntax/service validation testbed."
+    license: "MIT"
+    author: "Antigravity Project Authors"
+
+  - component: "benchmarks/ and sealed_evaluator/"
+    description: "Empirical evaluation suite with partitioned development, regression, and sealed frozen sets."
+    license: "MIT"
+    author: "Antigravity Project Authors"
