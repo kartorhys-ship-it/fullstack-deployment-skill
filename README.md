@@ -215,7 +215,7 @@ fullstack-deployment-skill/
 
 ### Running Automated Test Suites
 ```bash
-# Run unit & hardened security tests (20 tests passing)
+# Run unit & hardened security tests (21 tests passing)
 python -m unittest discover -s evaluation -p "test_*.py"
 
 # Run Layer A simulation sandbox tests (4 tests passing)

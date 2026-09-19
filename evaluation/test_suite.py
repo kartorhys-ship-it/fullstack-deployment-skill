@@ -261,6 +261,11 @@ class TestFailClosedContracts(unittest.TestCase):
         passed, reason = self.engine.verify_swap_memory_guard()
         self.assertTrue(passed, f"verify_swap_memory_guard failed: {reason}")
 
+    def test_cloudflare_real_ip_trust_contract(self):
+        """Repository templates must satisfy complete Cloudflare proxy CIDRs and prohibited wildcards."""
+        passed, reason = self.engine.verify_cloudflare_real_ip_trust()
+        self.assertTrue(passed, f"verify_cloudflare_real_ip_trust failed: {reason}")
+
 
 class TestDiscoveryHealth(unittest.TestCase):
     def setUp(self):

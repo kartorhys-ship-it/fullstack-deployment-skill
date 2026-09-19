@@ -47,6 +47,17 @@ class CrossArtifactContractEngine:
         "131.0.72.0/22"
     ]
 
+    # Authoritative Cloudflare IPv6 ranges (https://www.cloudflare.com/ips-v6)
+    CLOUDFLARE_IPV6_CIDRS = [
+        "2400:cb00::/32",
+        "2606:4700::/32",
+        "2803:f800::/32",
+        "2405:b500::/32",
+        "2405:8100::/32",
+        "2a06:98c0::/29",
+        "2c0f:f248::/32"
+    ]
+
     def __init__(self, repo_root: str, graph: Optional[DeploymentDependencyGraph] = None):
         self.repo_root = Path(repo_root).resolve()
         self.graph = graph
@@ -139,12 +150,23 @@ class CrossArtifactContractEngine:
         return True, None
 
     def verify_cloudflare_real_ip_trust(self, **kwargs) -> Tuple[bool, Optional[str]]:
-        """Verify that Cloudflare real IP restoration is secure, comprehensive, and blocks spoofing."""
+        """Verify that Cloudflare real IP restoration is secure, comprehensive, and blocks spoofing.
+        
+        Invariants:
+        1. Prohibits wildcard trust (0.0.0.0/0 or ::/0).
+        2. Mandates 'real_ip_header CF-Connecting-IP;'.
+        3. Mandates 'real_ip_recursive on;'.
+        4. Disallows any untrusted / arbitrary CIDRs outside known Cloudflare IP ranges.
+        5. Requires complete authoritative IPv4 coverage (all 15 IPv4 CIDRs).
+        """
         found_real_ip = False
         has_open_trust = False
         has_header_directive = False
         has_recursive_on = False
-        found_trusted_cidrs = set()
+        configured_cidrs = set()
+        untrusted_cidrs = set()
+
+        all_known_cf_cidrs = set(self.CLOUDFLARE_IPV4_CIDRS) | set(self.CLOUDFLARE_IPV6_CIDRS)
 
         for conf in self.repo_root.glob("**/*.conf"):
             try:
@@ -162,9 +184,11 @@ class CrossArtifactContractEngine:
                     if "real_ip_recursive on;" in content:
                         has_recursive_on = True
 
-                    for cidr in self.CLOUDFLARE_IPV4_CIDRS:
-                        if cidr in content:
-                            found_trusted_cidrs.add(cidr)
+                    for m in re.finditer(r"set_real_ip_from\s+([^\s;]+);", content):
+                        cidr = m.group(1).strip()
+                        configured_cidrs.add(cidr)
+                        if cidr not in all_known_cf_cidrs and cidr not in ("0.0.0.0/0", "::/0"):
+                            untrusted_cidrs.add(cidr)
             except Exception:
                 pass
 
@@ -180,8 +204,13 @@ class CrossArtifactContractEngine:
         if not has_recursive_on:
             return False, "CLOUDFLARE_TRUST_VIOLATION: Missing 'real_ip_recursive on;' for multi-hop proxy chains."
 
-        if len(found_trusted_cidrs) == 0:
-            return False, "CLOUDFLARE_TRUST_VIOLATION: set_real_ip_from declared without trusted Cloudflare CIDR boundary!"
+        if untrusted_cidrs:
+            return False, f"CLOUDFLARE_TRUST_VIOLATION: Unexpected untrusted CIDRs in set_real_ip_from: {sorted(untrusted_cidrs)}"
+
+        # Enforce complete coverage of the authoritative Cloudflare IPv4 network
+        missing_v4 = set(self.CLOUDFLARE_IPV4_CIDRS) - configured_cidrs
+        if missing_v4:
+            return False, f"CLOUDFLARE_TRUST_VIOLATION: Incomplete Cloudflare trust list. Missing {len(missing_v4)} required IPv4 ranges: {sorted(missing_v4)[:3]}..."
 
         return True, None
 
