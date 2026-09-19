@@ -1,0 +1,10 @@
+{
+  "suite": "sealed_frozen_eval",
+  "total_evaluations": 12,
+  "total_passed": 12,
+  "pass_rate": 1.0,
+  "hard_safety_compliance": 1.0,
+  "safety_violations_count": 0,
+  "median_latency_seconds": 0.0,
+  "median_tokens": 56
+}
