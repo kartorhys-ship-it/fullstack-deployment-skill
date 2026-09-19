@@ -240,13 +240,30 @@ class TestCanonicalPathAndChangeSurface(unittest.TestCase):
         self.registry.accept_manifest(self.manifest.manifest_id)
 
     def test_canonicalize_path_rejects_traversal(self):
-        with self.assertRaises(ManifestValidationError):
-            canonicalize_path("../etc/shadow")
+        adversarial_paths = [
+            "../etc/shadow",
+            r"..\etc\shadow",
+            "templates/../../etc/shadow",
+            r"templates\..\..\etc\shadow",
+            "/etc/shadow",
+            r"\etc\shadow",
+            r"C:\Windows\System32",
+            "C:/Windows/System32",
+            r"\\server\share\file",
+            "//server/share/file",
+            "",
+            "   ",
+            ".",
+            "./",
+        ]
+        for bad_path in adversarial_paths:
+            with self.subTest(bad_path=bad_path):
+                with self.assertRaises(ManifestValidationError):
+                    canonicalize_path(bad_path)
 
-        with self.assertRaises(ManifestValidationError):
-            canonicalize_path("/var/log/nginx")
-
+        # Valid relative paths normalized across separators
         self.assertEqual(canonicalize_path("./templates/nginx/app.conf"), "templates/nginx/app.conf")
+        self.assertEqual(canonicalize_path(r"templates\nginx\app.conf"), "templates/nginx/app.conf")
 
     def test_exact_path_matching_blocks_sibling_files(self):
         """Declaring 'templates/nginx/fullstack-app.conf' must NOT authorize 'templates/nginx/security-headers.conf'."""
@@ -369,6 +386,43 @@ class TestTransactionalManifestState(unittest.TestCase):
         self.assertEqual(orig.version, 1)
         self.assertEqual(orig.status, ManifestStatus.ACCEPTED)
         self.assertEqual(orig.targets, ["templates/nginx/fullstack-app.conf"])
+
+    def test_amendment_contract_failure_leaves_v1_intact(self):
+        """End-to-end test: amending a manifest with a contract that fails verification rolls back candidate and preserves v1 ACCEPTED."""
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        harness = DeploymentHarness(repo_root=repo_root)
+
+        # Initial manifest with valid invariants and complete blast radius succeeds
+        m = harness.submit_change_manifest(
+            intent="Base valid deployment",
+            targets=[
+                "templates/nginx/fullstack-app.conf",
+                "templates/scripts/gunicorn_start.sh",
+                "templates/supervisor/webapp.conf"
+            ],
+            expected_dependencies=["service:webapp"],
+            invariants=["backend_port_consistency"],
+            verification=["nginx_syntax"],
+            rollback={"strategy": "none"}
+        )
+        self.assertEqual(m.version, 1)
+        self.assertEqual(m.status, ManifestStatus.ACCEPTED)
+
+        # Attempt to amend manifest by adding an unknown/violating invariant
+        with self.assertRaises(ContractViolation) as ctx:
+            harness.gateway.amend_manifest(
+                manifest_id=m.manifest_id,
+                added_targets=["templates/nginx/security-headers.conf"],
+                added_invariants=["non_existent_violating_contract"],
+                amendment_reason="Try to expand scope with bad invariant"
+            )
+        self.assertIn("non_existent_violating_contract", str(ctx.exception))
+
+        # Original manifest remains intact at v1 and ACCEPTED
+        orig = harness.manifest_registry.get_manifest(m.manifest_id)
+        self.assertEqual(orig.version, 1)
+        self.assertEqual(orig.status, ManifestStatus.ACCEPTED)
+        self.assertEqual(len(orig.targets), 3)
 
 
 if __name__ == "__main__":

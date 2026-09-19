@@ -116,11 +116,12 @@ class DeploymentHarness:
         manifest_id: str,
         new_targets: Optional[List[str]] = None,
         new_dependencies: Optional[List[str]] = None,
+        new_invariants: Optional[List[str]] = None,
         amendment_reason: str = ""
     ) -> ChangeManifest:
         """Transactionally amends an existing manifest.
 
-        Clones candidate; if impact validation fails, rolls back amendment leaving original intact!
+        Clones candidate; if impact or contract validation fails, rolls back amendment leaving original intact!
         """
         self.record_step(token_count=50)
         self.refresh_graph()
@@ -130,6 +131,7 @@ class DeploymentHarness:
             manifest_id=manifest_id,
             new_targets=new_targets,
             new_dependencies=new_dependencies,
+            new_invariants=new_invariants,
             amendment_reason=amendment_reason
         )
 
@@ -139,7 +141,14 @@ class DeploymentHarness:
             self.manifest_registry.rollback_amendment(manifest_id, str(err))
             raise err
 
-        # 3. Commit amendment
+        # 3. Fail-closed contract verification on amended candidate
+        for inv in candidate.invariants:
+            res, rsn = self.contract_engine.verify_contract(inv)
+            if not res:
+                self.manifest_registry.rollback_amendment(manifest_id, f"Contract failure: {rsn}")
+                raise ContractViolation(f"Manifest amendment rejected due to contract failure on '{inv}': {rsn}")
+
+        # 4. Commit amendment
         accepted = self.manifest_registry.commit_amendment(manifest_id)
         return accepted
 
@@ -212,6 +221,7 @@ class AgentToolGateway:
         manifest_id: str,
         added_targets: Optional[List[str]] = None,
         added_dependencies: Optional[List[str]] = None,
+        added_invariants: Optional[List[str]] = None,
         amendment_reason: str = ""
     ) -> ChangeManifest:
         """Amends an existing manifest, recalculating blast radius and invalidating prior approvals."""
@@ -219,6 +229,7 @@ class AgentToolGateway:
             manifest_id=manifest_id,
             new_targets=added_targets,
             new_dependencies=added_dependencies,
+            new_invariants=added_invariants,
             amendment_reason=amendment_reason
         )
 

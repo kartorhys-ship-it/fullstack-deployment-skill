@@ -7,8 +7,9 @@ amendments to ensure failed impact checks never leave behind usable authorizatio
 import hashlib
 import time
 import json
+import re
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Any, Tuple
 
@@ -29,24 +30,43 @@ class ManifestValidationError(Exception):
 
 
 def canonicalize_path(path_str: str) -> str:
-    """Validates and canonicalizes a relative target file path.
+    """Validates and canonicalizes a relative target file path across both Windows and POSIX hosts.
 
-    Rejects empty paths, .., absolute paths, and leading slashes.
+    Security Invariants:
+    1. Rejects empty or whitespace-only paths.
+    2. Normalizes all backslashes to forward slashes before any parsing.
+    3. Rejects leading slashes (POSIX root, Windows root, and UNC network shares).
+    4. Rejects Windows drive-letter absolute paths (e.g., C:/, D:/).
+    5. Rejects any traversal sequences ('..') in path components.
+    6. Always returns a clean, relative POSIX path string.
     """
     if not path_str or not isinstance(path_str, str) or not path_str.strip():
         raise ManifestValidationError("Target file path cannot be empty.")
 
-    clean = path_str.strip()
-    if clean.startswith("/") or clean.startswith("\\") or Path(clean).is_absolute():
-        raise ManifestValidationError(f"Absolute paths not permitted in manifest targets: '{path_str}'. Must be relative.")
+    # Normalize separators upfront
+    clean = path_str.strip().replace("\\", "/")
 
-    p = Path(clean)
-    parts = p.parts
-    if ".." in parts:
+    # Reject leading slashes (POSIX absolute paths, UNC network roots)
+    if clean.startswith("/"):
+        raise ManifestValidationError(f"Absolute or root paths not permitted in manifest targets: '{path_str}'. Must be relative.")
+
+    # Reject Windows drive letters (e.g. C:, D:)
+    if re.match(r"^[A-Za-z]:", clean):
+        raise ManifestValidationError(f"Drive-letter absolute paths not permitted in manifest targets: '{path_str}'. Must be relative.")
+
+    # Parse with PurePosixPath to inspect components independently of host OS
+    p = PurePosixPath(clean)
+    if ".." in p.parts:
         raise ManifestValidationError(f"Path traversal '..' prohibited in target: '{path_str}'.")
 
-    # Normalized relative path
-    norm = str(p.as_posix()).lstrip("./")
+    # Reconstruct normalized posix string without leading ./
+    norm = str(p)
+    while norm.startswith("./"):
+        norm = norm[2:]
+
+    if not norm or norm == ".":
+        raise ManifestValidationError(f"Invalid empty or root target path: '{path_str}'.")
+
     return norm
 
 
@@ -197,6 +217,7 @@ class ManifestRegistry:
         manifest_id: str,
         new_targets: Optional[List[str]] = None,
         new_dependencies: Optional[List[str]] = None,
+        new_invariants: Optional[List[str]] = None,
         amendment_reason: str = ""
     ) -> ChangeManifest:
         """Creates an isolated transactional candidate clone in AMENDING state.
@@ -224,13 +245,19 @@ class ManifestRegistry:
                 if nd not in candidate_deps:
                     candidate_deps.append(nd)
 
+        candidate_invs = list(current.invariants)
+        if new_invariants:
+            for ni in new_invariants:
+                if ni not in candidate_invs:
+                    candidate_invs.append(ni)
+
         candidate = ChangeManifest(
             manifest_id=current.manifest_id,
             version=current.version + 1,
             intent=current.intent,
             targets=candidate_targets,
             expected_dependencies=candidate_deps,
-            invariants=list(current.invariants),
+            invariants=candidate_invs,
             verification=list(current.verification),
             rollback=dict(current.rollback),
             full_rewrite=current.full_rewrite,

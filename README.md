@@ -41,7 +41,7 @@ flowchart TD
     subgraph GatekeeperLayer["3. Change Control & Guardrails (Deterministic)"]
         F --> G{"AgentToolGateway.submit_manifest()"}
         G -- "Declared vs Discovered Gap" --> H["MANIFEST_INCOMPLETE\n(Requires amend_manifest)"]
-        G -- "Manifest Accepted" --> I["Frozen manifest_id Issued"]
+        G -- "Manifest Accepted" --> I["Accepted manifest_id Issued"]
         I --> J["diff_guard.py\n(Change Surface Guard: Canonical exact targets)"]
         J --> K["policy.py\n(Command & Secret Inspection)"]
     end
@@ -77,7 +77,7 @@ nginx:upstream:webapp_backend --forwards_to--> socket:/var/www/webapp/shared/run
 ```
 
 ### 📋 2. Structured Change Manifests & The Impact Gap (`harness/manifest.py` & `impact.py`)
-No state-modifying action (T2–T5) can execute without an accepted, frozen `manifest_id`:
+No state-modifying action (T2–T5) can execute without an accepted `manifest_id` (and version):
 * **Declared vs. Discovered Gap**: If an agent attempts to modify a shared backend port across Nginx and Supervisor but omits `healthcheck.sh`, `impact.py` intercepts the mutation before execution with `MANIFEST_INCOMPLETE`.
 * **Scope Amendment & HITL Invalidation**: Calling `amend_change_manifest()` recalculates contracts and automatically revokes any previous Human-in-the-Loop authorization.
 
@@ -106,7 +106,7 @@ Deterministically validates cross-service boundaries before reload (fails closed
 
 ### 🔒 Hardened Security Boundaries
 1. **Out-of-Band Human-in-the-Loop (HITL)**: Destructive and lockout actions (Tier T5, e.g. UFW firewall changes or database snapshot purging) strictly require a **hashed approval record prototype** generated through an out-of-band operator service ([`harness/approvals.py:TrustedApprovalService`](harness/approvals.py)). Approvals are bound to `(manifest_id, version, action, action_hash)`, where `action_hash = SHA256(canonical_json(action + arguments))` prevents parameter substitution attacks. The agent's tool surface has no self-approval capabilities.
-2. **Capability Facade (`AgentToolGateway`)**: The agent interacts exclusively through [`AgentToolGateway`](harness/core.py), preventing direct invocation of internal tools or bypass of contract verification gates.
+2. **Capability Facade (`AgentToolGateway`)**: The intended agent runtime exposes only [`AgentToolGateway`](harness/core.py); internal harness capabilities (`tools`, `approval_service`, `state`, `manifest_registry`) are encapsulated and not registered on the model's callable tool surface, preventing direct bypass of contract verification gates.
 3. **Transactional Change Manifest State Machine**: All state-modifying actions (T2–T5) require an accepted `manifest_id` managed via a strict lifecycle (`DRAFT` $\rightarrow$ `PENDING_VALIDATION` $\rightarrow$ `ACCEPTED`). Manifest amendments are transactionally staged and automatically roll back on validation failure.
 4. **Strict Canonical Path Discipline**: Targets and blast radii enforce canonical relative path matching ([`harness/manifest.py:canonicalize_path`](harness/manifest.py)). Traversal sequences (`..`), absolute path escapes, and fuzzy substring matches are rejected before evaluation.
 5. **Fail-Closed Contract Engine**: Cross-artifact contracts ([`harness/contracts.py`](harness/contracts.py)) fail closed: unknown contract types raise `UnknownContractError`, and any failed invariant raises `ContractViolation` before mutating execution proceeds.
@@ -215,7 +215,7 @@ fullstack-deployment-skill/
 
 ### Running Automated Test Suites
 ```bash
-# Run unit & hardened security tests (22 tests passing)
+# Run unit & hardened security tests (23 tests passing)
 python -m unittest discover -s evaluation -p "test_*.py"
 
 # Run Layer A simulation sandbox tests (4 tests passing)
