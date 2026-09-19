@@ -81,13 +81,12 @@ cp /app/templates/systemd/meilisearch.service /etc/systemd/system/meilisearch.se
 touch /etc/meilisearch.env /usr/local/bin/meilisearch
 chmod +x /usr/local/bin/meilisearch
 
-systemd_out=$(systemd-analyze verify /etc/systemd/system/meilisearch.service 2>&1 || true)
-if echo "$systemd_out" | grep -qi 'error'; then
+if systemd_out=$(systemd-analyze verify /etc/systemd/system/meilisearch.service 2>&1); then
+    echo "PASSED (systemd unit syntax valid)"
+else
     echo "FAILED"
     echo "$systemd_out"
     FAILED=1
-else
-    echo "PASSED (systemd unit syntax valid)"
 fi
 
 echo "=========================================================="

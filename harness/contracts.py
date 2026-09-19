@@ -207,10 +207,14 @@ class CrossArtifactContractEngine:
         if untrusted_cidrs:
             return False, f"CLOUDFLARE_TRUST_VIOLATION: Unexpected untrusted CIDRs in set_real_ip_from: {sorted(untrusted_cidrs)}"
 
-        # Enforce complete coverage of the authoritative Cloudflare IPv4 network
+        # Enforce complete coverage of the authoritative Cloudflare IPv4 and IPv6 network
         missing_v4 = set(self.CLOUDFLARE_IPV4_CIDRS) - configured_cidrs
         if missing_v4:
             return False, f"CLOUDFLARE_TRUST_VIOLATION: Incomplete Cloudflare trust list. Missing {len(missing_v4)} required IPv4 ranges: {sorted(missing_v4)[:3]}..."
+
+        missing_v6 = set(self.CLOUDFLARE_IPV6_CIDRS) - configured_cidrs
+        if missing_v6:
+            return False, f"CLOUDFLARE_TRUST_VIOLATION: Incomplete Cloudflare trust list. Missing {len(missing_v6)} required IPv6 ranges: {sorted(missing_v6)[:3]}..."
 
         return True, None
 

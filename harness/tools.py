@@ -42,6 +42,9 @@ class HostProbeAdapter:
     def ssh_firewall_allowed(self) -> bool:
         raise NotImplementedError
 
+    def supervisor_service_valid(self, service_name: str) -> bool:
+        raise NotImplementedError
+
 
 class RepositoryHeuristicProbeAdapter(HostProbeAdapter):
     """Local repository static heuristic probe adapter for prototype inspection."""
@@ -76,6 +79,16 @@ class RepositoryHeuristicProbeAdapter(HostProbeAdapter):
             try:
                 content = f.read_text(encoding="utf-8")
                 if "allow 22" in content or "allow ssh" in content.lower():
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def supervisor_service_valid(self, service_name: str) -> bool:
+        for conf in self.repo_root.glob("**/supervisor/**/*.conf"):
+            try:
+                content = conf.read_text(encoding="utf-8")
+                if f"[program:{service_name}]" in content:
                     return True
             except Exception:
                 pass
@@ -127,6 +140,10 @@ class DeploymentTools:
     def _repository_firewall_precheck(self) -> bool:
         """Evaluates SSH port 22 perimeter allowance through probe adapter."""
         return self.probes.ssh_firewall_allowed()
+
+    def _repository_supervisor_precheck(self, service_name: str) -> bool:
+        """Evaluates Supervisor configuration validity for a service through probe adapter."""
+        return self.probes.supervisor_service_valid(service_name)
 
     # --- T0: Pure Computation (No Manifest Required) ---
     def t0_calc_worker_sizing(self, cpu_cores: int, ram_gb: float, is_async: bool = True) -> Dict[str, Any]:
@@ -225,10 +242,20 @@ class DeploymentTools:
 
     def t4_restart_supervisor(self, service_name: str, manifest_id: Optional[str] = None) -> Dict[str, Any]:
         manifest = self._verify_manifest_authorization("T4", manifest_id)
+
+        # Probe Supervisor configuration independently
+        if not self._repository_supervisor_precheck(service_name):
+            raise PreconditionFailure(f"Supervisor restart blocked: Service '{service_name}' configuration not verified.")
+
+        # Availability precondition: rollback mechanism must be ready
+        if not self._repository_rollback_precheck():
+            raise PreconditionFailure("Supervisor restart blocked: No rollback checkpoint verified.")
+
         return {
             "tier": "T4",
             "manifest_id": manifest.manifest_id,
             "action": f"supervisorctl restart {service_name}",
+            "service_probed_ok": True,
             "status": "restarted"
         }
 

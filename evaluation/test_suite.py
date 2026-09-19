@@ -105,6 +105,25 @@ class TestHardenedToolContracts(unittest.TestCase):
         self.assertEqual(res["status"], "reloaded_cleanly")
         self.assertTrue(res.get("syntax_probed_ok"))
 
+    def test_t4_supervisor_restart_preconditions(self):
+        # Without manifest_id, T4 MUST fail
+        with self.assertRaises(ToolContractError):
+            self.harness.tools.t4_restart_supervisor("webapp")
+
+        # Unknown/unverified service configuration must fail precondition
+        with self.assertRaises(PreconditionFailure):
+            self.harness.tools.t4_restart_supervisor("non_existent_service", manifest_id=self.manifest.manifest_id)
+
+        # Without a verified rollback checkpoint, T4 MUST fail precondition
+        with self.assertRaises(PreconditionFailure):
+            self.harness.tools.t4_restart_supervisor("webapp", manifest_id=self.manifest.manifest_id)
+
+        # With discrete checkpoint created and valid service in repository, restart succeeds
+        self.harness.state.create_checkpoint("Pre-supervisor restart checkpoint", {})
+        res = self.harness.tools.t4_restart_supervisor("webapp", manifest_id=self.manifest.manifest_id)
+        self.assertEqual(res["status"], "restarted")
+        self.assertTrue(res.get("service_probed_ok"))
+
     def test_gateway_manifest_amendment(self):
         """Tests agent capability gateway facade for transactional manifest amendments."""
         status = self.harness.gateway.get_manifest_status(self.manifest.manifest_id)

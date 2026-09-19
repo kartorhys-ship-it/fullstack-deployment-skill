@@ -130,7 +130,7 @@ class TrustedApprovalService:
         if not record:
             return False, f"No trusted HITL approval record found for action '{action}' on manifest '{manifest_id}'."
 
-        expected_hash = canonical_action_hash(action, arguments) if arguments is not None else None
+        expected_hash = canonical_action_hash(action, arguments)
         return record.is_valid(current_manifest_version, expected_action_hash=expected_hash)
 
     def revoke_approval(self, manifest_id: str, action: Optional[str] = None):
