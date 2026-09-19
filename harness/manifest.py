@@ -29,6 +29,11 @@ class ManifestValidationError(Exception):
     pass
 
 
+class PathTraversalViolation(ManifestValidationError):
+    """Raised when a path traversal sequence or illegal boundary escape is detected."""
+    pass
+
+
 def canonicalize_path(path_str: str) -> str:
     """Validates and canonicalizes a relative target file path across both Windows and POSIX hosts.
 
@@ -48,16 +53,16 @@ def canonicalize_path(path_str: str) -> str:
 
     # Reject leading slashes (POSIX absolute paths, UNC network roots)
     if clean.startswith("/"):
-        raise ManifestValidationError(f"Absolute or root paths not permitted in manifest targets: '{path_str}'. Must be relative.")
+        raise PathTraversalViolation(f"Absolute or root paths not permitted in manifest targets: '{path_str}'. Must be relative.")
 
     # Reject Windows drive letters (e.g. C:, D:)
     if re.match(r"^[A-Za-z]:", clean):
-        raise ManifestValidationError(f"Drive-letter absolute paths not permitted in manifest targets: '{path_str}'. Must be relative.")
+        raise PathTraversalViolation(f"Drive-letter absolute paths not permitted in manifest targets: '{path_str}'. Must be relative.")
 
     # Parse with PurePosixPath to inspect components independently of host OS
     p = PurePosixPath(clean)
     if ".." in p.parts:
-        raise ManifestValidationError(f"Path traversal '..' prohibited in target: '{path_str}'.")
+        raise PathTraversalViolation(f"Path traversal '..' prohibited in target: '{path_str}'.")
 
     # Reconstruct normalized posix string without leading ./
     norm = str(p)
@@ -293,5 +298,14 @@ class ManifestRegistry:
         """Discards candidate amendment upon validation failure, leaving existing manifest intact."""
         self._amendment_staging.pop(manifest_id, None)
 
+    def has_staged_amendment(self, manifest_id: str) -> bool:
+        """Returns True if a candidate amendment is currently in staging, False otherwise."""
+        return manifest_id in self._amendment_staging
+
+    def get_staged_amendment(self, manifest_id: str) -> Optional[ChangeManifest]:
+        """Returns candidate staged amendment if currently in AMENDING state, or None."""
+        return self._amendment_staging.get(manifest_id)
+
     def get_manifest(self, manifest_id: str) -> Optional[ChangeManifest]:
         return self._manifests.get(manifest_id)
+

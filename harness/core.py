@@ -95,18 +95,20 @@ class DeploymentHarness:
             rewrite_justification=rewrite_justification
         )
 
-        # 2. Check Declared vs. Discovered Impact Gap
-        valid, err = self.impact_analyzer.verify_manifest_impact(manifest)
-        if not valid and err:
-            self.manifest_registry.reject_manifest(manifest.manifest_id, str(err))
-            raise err
+        try:
+            # 2. Check Declared vs. Discovered Impact Gap
+            valid, err = self.impact_analyzer.verify_manifest_impact(manifest)
+            if not valid and err:
+                raise err
 
-        # 3. Fail-closed contract check
-        for inv in invariants:
-            res, rsn = self.contract_engine.verify_contract(inv)
-            if not res:
-                self.manifest_registry.reject_manifest(manifest.manifest_id, f"Contract failure: {rsn}")
-                raise ContractViolation(f"Manifest rejected due to contract failure on '{inv}': {rsn}")
+            # 3. Fail-closed contract check
+            for inv in invariants:
+                res, rsn = self.contract_engine.verify_contract(inv)
+                if not res:
+                    raise ContractViolation(f"Manifest rejected due to contract failure on '{inv}': {rsn}")
+        except Exception as exc:
+            self.manifest_registry.reject_manifest(manifest.manifest_id, str(exc))
+            raise
 
         # 4. Accept manifest
         return self.manifest_registry.accept_manifest(manifest.manifest_id)
@@ -135,18 +137,20 @@ class DeploymentHarness:
             amendment_reason=amendment_reason
         )
 
-        # 2. Verify candidate impact
-        valid, err = self.impact_analyzer.verify_manifest_impact(candidate)
-        if not valid and err:
-            self.manifest_registry.rollback_amendment(manifest_id, str(err))
-            raise err
+        try:
+            # 2. Verify candidate impact
+            valid, err = self.impact_analyzer.verify_manifest_impact(candidate)
+            if not valid and err:
+                raise err
 
-        # 3. Fail-closed contract verification on amended candidate
-        for inv in candidate.invariants:
-            res, rsn = self.contract_engine.verify_contract(inv)
-            if not res:
-                self.manifest_registry.rollback_amendment(manifest_id, f"Contract failure: {rsn}")
-                raise ContractViolation(f"Manifest amendment rejected due to contract failure on '{inv}': {rsn}")
+            # 3. Fail-closed contract verification on amended candidate
+            for inv in candidate.invariants:
+                res, rsn = self.contract_engine.verify_contract(inv)
+                if not res:
+                    raise ContractViolation(f"Manifest amendment rejected due to contract failure on '{inv}': {rsn}")
+        except Exception as exc:
+            self.manifest_registry.rollback_amendment(manifest_id, str(exc))
+            raise
 
         # 4. Commit amendment
         accepted = self.manifest_registry.commit_amendment(manifest_id)
@@ -245,4 +249,9 @@ class AgentToolGateway:
         """Returns current lifecycle status of a manifest."""
         m = self._harness.manifest_registry.get_manifest(manifest_id)
         return m.status.value if m else None
+
+    def has_staged_amendment(self, manifest_id: str) -> bool:
+        """Returns True if a manifest amendment is currently in staging (AMENDING state)."""
+        return self._harness.manifest_registry.has_staged_amendment(manifest_id)
+
 

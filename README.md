@@ -81,11 +81,12 @@ No state-modifying action (T2–T5) can execute without an accepted `manifest_id
 * **Declared vs. Discovered Gap**: If an agent attempts to modify a shared backend port across Nginx and Supervisor but omits `healthcheck.sh`, `impact.py` intercepts the mutation before execution with `MANIFEST_INCOMPLETE`.
 * **Scope Amendment & HITL Invalidation**: Calling `amend_change_manifest()` recalculates contracts and automatically revokes any previous Human-in-the-Loop authorization.
 
-### 🛡️ 3. Change Surface Guard (`harness/diff_guard.py`)
+### 🛡️ 3. Change Surface Guard (`harness/diff_guard.py` & `tools.py`)
 Replaces arbitrary `<25%` diff limits with semantic discipline:
 * Rejects mutations of files outside the declared manifest targets.
 * Rejects unannounced full-file rewrites when `full_rewrite=False`.
-* Strictly prevents accidental deletion of Nginx `security-headers.conf` inclusions or SSL certificate directives during surgical edits.
+* Strictly prevents accidental deletion of Nginx `security-headers.conf` inclusions, SSL certificate directives, or Cloudflare real-IP configurations.
+* **Trusted Disk Baseline & Symlink Containment (T2)**: Baseline content is derived directly from the trusted repository filesystem (`repo_root / target_file`), preventing untrusted callers from blinding the guard with spoofed baselines. Resolves paths with `resolve(strict=False)` and verifies `is_relative_to(repo_root)` to prevent symlink escapes outside the repository.
 
 ### ⚡ 4. Cross-Artifact Contract Engine (`harness/contracts.py`)
 Deterministically validates cross-service boundaries before reload (fails closed on unknown or violated contracts):
@@ -107,8 +108,8 @@ Deterministically validates cross-service boundaries before reload (fails closed
 ### 🔒 Hardened Security Boundaries
 1. **Out-of-Band Human-in-the-Loop (HITL)**: Destructive and lockout actions (Tier T5, e.g. UFW firewall changes or database snapshot purging) strictly require a **hashed approval record prototype** generated through an out-of-band operator service ([`harness/approvals.py:TrustedApprovalService`](harness/approvals.py)). Approvals are bound to `(manifest_id, version, action, action_hash)`, where `action_hash = SHA256(canonical_json(action + arguments))` prevents parameter substitution attacks. The agent's tool surface has no self-approval capabilities.
 2. **Capability Facade (`AgentToolGateway`)**: The intended agent runtime exposes only [`AgentToolGateway`](harness/core.py); internal harness capabilities (`tools`, `approval_service`, `state`, `manifest_registry`) are encapsulated and not registered on the model's callable tool surface, preventing direct bypass of contract verification gates.
-3. **Transactional Change Manifest State Machine**: All state-modifying actions (T2–T5) require an accepted `manifest_id` managed via a strict lifecycle (`DRAFT` $\rightarrow$ `PENDING_VALIDATION` $\rightarrow$ `ACCEPTED`). Manifest amendments are transactionally staged and automatically roll back on validation failure.
-4. **Strict Canonical Path Discipline**: Targets and blast radii enforce canonical relative path matching ([`harness/manifest.py:canonicalize_path`](harness/manifest.py)). Traversal sequences (`..`), absolute path escapes, and fuzzy substring matches are rejected before evaluation.
+3. **Transactional Change Manifest State Machine**: All state-modifying actions (T2–T5) require an accepted `manifest_id` managed via a strict lifecycle (`DRAFT` $\rightarrow$ `PENDING_VALIDATION` $\rightarrow$ `ACCEPTED`). Manifest validation is fully exception-safe: any impact gap or invariant failure (including `UnknownContractError`) strictly transitions submissions to `REJECTED` and rolls back staged amendments to preserve `ACCEPTED v1`, guaranteeing no orphaned staging state (`has_staged_amendment`).
+4. **Strict Canonical Path Discipline & Symlink Containment**: Targets and blast radii enforce canonical relative path matching ([`harness/manifest.py:canonicalize_path`](harness/manifest.py)). Traversal sequences (`..`), UNC roots, Windows drive letters, and symlinks escaping the repository root are rejected before evaluation.
 5. **Fail-Closed Contract Engine**: Cross-artifact contracts ([`harness/contracts.py`](harness/contracts.py)) fail closed: unknown contract types raise `UnknownContractError`, and any failed invariant raises `ContractViolation` before mutating execution proceeds.
 6. **Preconditions & Host Probes**: Prechecks are cleanly decoupled via [`HostProbeAdapter`](harness/tools.py), with local repository heuristic checks during prototyping and native Linux binary execution in containerized environments.
 7. **Discovery Telemetry**: Dynamic repository fact extraction tracks parsing health (`DiscoveryHealth.parse_failures`). If a declared manifest target file fails structural parsing, mutations are blocked with `MANIFEST_INCOMPLETE`.
@@ -215,7 +216,7 @@ fullstack-deployment-skill/
 
 ### Running Automated Test Suites
 ```bash
-# Run unit & hardened security tests (23 tests passing)
+# Run unit & hardened security tests (27 tests passing)
 python -m unittest discover -s evaluation -p "test_*.py"
 
 # Run Layer A simulation sandbox tests (4 tests passing)

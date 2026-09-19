@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 from harness.policy import PolicyViolation, PreconditionFailure
 from harness.secrets import SecretMasker
 from harness.state import StateManager
-from harness.manifest import ManifestRegistry, ChangeManifest, ManifestStatus
+from harness.manifest import ManifestRegistry, ChangeManifest, ManifestStatus, canonicalize_path
 from harness.diff_guard import ChangeSurfaceGuard, ChangeSurfaceViolation
 from harness.approvals import TrustedApprovalService
 
@@ -183,21 +183,46 @@ class DeploymentTools:
         self,
         target_file: str,
         new_content: str,
-        original_content: str = "",
         manifest_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Stages a configuration modification, strictly validated by ChangeSurfaceGuard."""
+        """Stages a configuration modification, strictly validated by ChangeSurfaceGuard against trusted repository state.
+
+        The baseline content is derived independently from the repository filesystem (repo_root / target_file),
+        preventing untrusted callers from blinding the guard with spoofed baselines.
+        """
         manifest = self._verify_manifest_authorization("T2", manifest_id)
+
+        # 1. Canonicalize relative target path (rejecting traversal, UNC, drive letters)
+        canonical_target = canonicalize_path(target_file)
+
+        # 2. Enforce repository containment and symlink escape prevention
+        repo_root = self.repo_root.resolve()
+        candidate_path = repo_root / canonical_target
+        resolved = candidate_path.resolve(strict=False)
+
+        if not resolved.is_relative_to(repo_root):
+            raise ChangeSurfaceViolation(
+                f"Target file '{target_file}' escapes repository root via symlink or path traversal."
+            )
+
+        # 3. Derive trusted original content from repository filesystem
+        if resolved.exists() and resolved.is_file():
+            trusted_original = resolved.read_text(encoding="utf-8")
+        else:
+            # Authorized new file creation
+            trusted_original = ""
+
+        # 4. Guard validates proposed mutation against trusted baseline
         guard = ChangeSurfaceGuard(manifest)
-        allowed, reason = guard.validate_mutation(target_file, original_content, new_content)
+        allowed, reason = guard.validate_mutation(canonical_target, trusted_original, new_content)
         if not allowed:
             raise ChangeSurfaceViolation(reason)
 
-        diff = guard.compute_diff(original_content, new_content, target_file)
+        diff = guard.compute_diff(trusted_original, new_content, canonical_target)
         return {
             "tier": "T2",
             "manifest_id": manifest.manifest_id,
-            "target_file": target_file,
+            "target_file": canonical_target,
             "status": "staged_validated",
             "diff": diff
         }

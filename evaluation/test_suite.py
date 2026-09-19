@@ -23,7 +23,7 @@ from harness.tools import DeploymentTools, HumanApprovalRequired, ToolContractEr
 from harness.core import DeploymentHarness, HarnessExecutionBudgetExceeded
 from harness.graph import DeploymentDependencyGraph, EdgeEvidence
 from harness.discovery import discover_repository
-from harness.manifest import ManifestRegistry, ChangeManifest, ManifestValidationError, ManifestStatus, canonicalize_path
+from harness.manifest import ManifestRegistry, ChangeManifest, ManifestValidationError, ManifestStatus, canonicalize_path, PathTraversalViolation
 from harness.diff_guard import ChangeSurfaceGuard, ChangeSurfaceViolation
 from harness.contracts import CrossArtifactContractEngine, ContractViolation, UnknownContractError
 from harness.approvals import TrustedApprovalService
@@ -424,6 +424,92 @@ class TestTransactionalManifestState(unittest.TestCase):
         self.assertEqual(orig.status, ManifestStatus.ACCEPTED)
         self.assertEqual(len(orig.targets), 3)
 
+        # Ensure staging area was discarded cleanly
+        self.assertFalse(harness.manifest_registry.has_staged_amendment(m.manifest_id))
+        self.assertIsNone(harness.manifest_registry.get_staged_amendment(m.manifest_id))
+        self.assertFalse(harness.gateway.has_staged_amendment(m.manifest_id))
+
+    def test_submission_unknown_contract_transitions_to_rejected(self):
+        """Initial manifest submission with an unknown contract must raise UnknownContractError and transition to REJECTED."""
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        harness = DeploymentHarness(repo_root=repo_root)
+
+        with self.assertRaises(UnknownContractError):
+            harness.submit_change_manifest(
+                intent="Deploy with unknown contract",
+                targets=["templates/nginx/snippets/new-header.conf"],
+                expected_dependencies=[],
+                invariants=["unknown_bogus_contract_123"],
+                verification=["nginx_syntax"],
+                rollback={"strategy": "none"}
+            )
+
+        manifests = list(harness.manifest_registry._manifests.values())
+        self.assertTrue(len(manifests) > 0)
+        latest = manifests[-1]
+        self.assertEqual(latest.status, ManifestStatus.REJECTED)
+        self.assertIn("unknown_bogus_contract_123", latest.rejection_reason)
+
+
+class TestT2ChangeSurfaceHardening(unittest.TestCase):
+    def setUp(self):
+        self.repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        self.harness = DeploymentHarness(repo_root=self.repo_root)
+        self.manifest = self.harness.submit_change_manifest(
+            intent="T2 test deployment",
+            targets=[
+                "templates/nginx/fullstack-app.conf",
+                "templates/scripts/gunicorn_start.sh",
+                "templates/supervisor/webapp.conf"
+            ],
+            expected_dependencies=["service:webapp"],
+            invariants=["backend_port_consistency"],
+            verification=["nginx_syntax"],
+            rollback={"strategy": "none"}
+        )
+
+    def test_t2_trusted_disk_blocks_ssl_deletion_spoof(self):
+        """T2 must read real baseline from disk and detect deletion of SSL directives."""
+        from pathlib import Path
+        real_content = Path(self.repo_root, "templates/nginx/fullstack-app.conf").read_text(encoding="utf-8")
+        # Delete ssl_certificate directives from proposal
+        mutated = "\n".join([line for line in real_content.splitlines() if "ssl_certificate" not in line])
+
+        with self.assertRaises(ChangeSurfaceViolation) as ctx:
+            self.harness.execute_plan_step("t2_stage_config_patch", {
+                "target_file": "templates/nginx/fullstack-app.conf",
+                "new_content": mutated,
+                "manifest_id": self.manifest.manifest_id
+            })
+        self.assertIn("deleted SSL certificate directives", str(ctx.exception))
+
+    def test_t2_allows_legitimate_new_file_creation(self):
+        """T2 allows creating authorized non-existent files with empty baseline."""
+        new_target = "templates/nginx/snippets/new-header.conf"
+        amended = self.harness.gateway.amend_manifest(
+            manifest_id=self.manifest.manifest_id,
+            added_targets=[new_target],
+            amendment_reason="Authorize new header file"
+        )
+        res = self.harness.execute_plan_step("t2_stage_config_patch", {
+            "target_file": new_target,
+            "new_content": 'add_header X-Custom-Header "Active";\n',
+            "manifest_id": amended.manifest_id
+        })
+        self.assertEqual(res["status"], "staged_validated")
+        self.assertEqual(res["target_file"], new_target)
+        self.assertIn('+add_header X-Custom-Header "Active";', res["diff"])
+
+    def test_t2_blocks_path_escape(self):
+        """T2 blocks target files that attempt traversal or escape repository root."""
+        with self.assertRaises((ChangeSurfaceViolation, PathTraversalViolation)):
+            self.harness.execute_plan_step("t2_stage_config_patch", {
+                "target_file": "../etc/shadow",
+                "new_content": "root:x:0:0:::",
+                "manifest_id": self.manifest.manifest_id
+            })
+
 
 if __name__ == "__main__":
     unittest.main()
+
