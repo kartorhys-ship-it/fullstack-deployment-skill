@@ -195,28 +195,30 @@ docker run --rm deployment-verifier
 
 ## 6. How to Push to Your GitHub Portfolio
 
-To publish this repository under your personal GitHub account:
+To publish this repository under your GitHub account (**[kartorhys-ship-it](https://github.com/kartorhys-ship-it)**):
 
-1. **Create a new repository on GitHub**:
-   - Name: `fullstack-deployment-skill` (or `ai-assisted-deployment-system`)
+1. **Create the repository on GitHub**:
+   - Go to [github.com/new](https://github.com/new)
+   - Repository name: **`fullstack-deployment-skill`**
+   - Description: *AI-Assisted Deployment System & Empirical Skill Optimization for Ubuntu, Nginx, and CI/CD*
    - Visibility: **Public**
-   - Do **NOT** initialize with a README, license, or .gitignore (this repo already has them).
+   - **Important**: Do **NOT** check "Add a README file", ".gitignore template", or "License" (the repository already contains all 12 commits, license, and documentation).
 
-2. **Add your GitHub remote and push**:
+2. **Push to GitHub**:
+   The remote origin is already pre-configured to `https://github.com/kartorhys-ship-it/fullstack-deployment-skill.git`. Simply run:
    ```bash
    cd "C:\Antigravity Projects\fullstack-deployment-skill"
-   git remote add origin https://github.com/<YOUR_GITHUB_USERNAME>/fullstack-deployment-skill.git
-   git branch -M main
    git push -u origin main --tags
    ```
 
-All atomic commits, experiment memory, and release tags will be preserved cleanly in your GitHub profile!
+All 12 atomic commits, experiment memory, and the `v1.0.0` release tag will be published to your GitHub profile!
 
 ---
 
 ## 7. Provenance & Attribution
 
-This project is authored by Antigravity Project Authors and licensed under the [MIT License](LICENSE).
+* **Maintainer / Author**: [kartorhys-ship-it](https://github.com/kartorhys-ship-it)
+* **License**: [MIT License](LICENSE)
 
 Upstream instructional knowledge, deployment architectures, and reference templates are derived from:
 * **Course**: *"How to Deploy, Secure, and Automate Full-Stack Web Apps - Course for Beginners"* by **Imad Saddik** / **freeCodeCamp.org** ([YouTube](https://www.youtube.com/watch?v=wY5pQOTsGaA)).
