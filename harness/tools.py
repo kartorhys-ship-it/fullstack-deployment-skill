@@ -27,6 +27,55 @@ class HumanApprovalRequired(Exception):
     pass
 
 
+class HostProbeAdapter:
+    """Capability interface for host environment inspection.
+    
+    Implementations run actual host or container commands (e.g. `nginx -t`, `ufw status`).
+    """
+    def nginx_syntax_valid(self) -> bool:
+        raise NotImplementedError
+
+    def rollback_ready(self) -> bool:
+        raise NotImplementedError
+
+    def ssh_firewall_allowed(self) -> bool:
+        raise NotImplementedError
+
+
+class RepositoryHeuristicProbeAdapter(HostProbeAdapter):
+    """Local repository static heuristic probe adapter for prototype inspection."""
+
+    def __init__(self, repo_root: Path, state_manager: StateManager):
+        self.repo_root = repo_root
+        self.state = state_manager
+
+    def nginx_syntax_valid(self) -> bool:
+        for conf in self.repo_root.glob("**/nginx/**/*.conf"):
+            try:
+                content = conf.read_text(encoding="utf-8")
+                if content.count("{") != content.count("}"):
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def rollback_ready(self) -> bool:
+        checkpoints = getattr(self.state, "checkpoints", getattr(self.state, "_checkpoints", []))
+        return len(checkpoints) > 0 or (self.repo_root / "templates").exists()
+
+    def ssh_firewall_allowed(self) -> bool:
+        for f in self.repo_root.glob("**/*"):
+            if f.is_dir() or ".git" in str(f):
+                continue
+            try:
+                content = f.read_text(encoding="utf-8")
+                if "allow 22" in content or "allow ssh" in content.lower():
+                    return True
+            except Exception:
+                pass
+        return False
+
+
 class DeploymentTools:
     def __init__(
         self,
@@ -34,6 +83,7 @@ class DeploymentTools:
         state_manager: StateManager,
         manifest_registry: Optional[ManifestRegistry] = None,
         approval_service: Optional[TrustedApprovalService] = None,
+        probe_adapter: Optional[HostProbeAdapter] = None,
         repo_root: str = "."
     ):
         self.secrets = secret_masker
@@ -41,6 +91,7 @@ class DeploymentTools:
         self.manifest_registry = manifest_registry or ManifestRegistry()
         self.approval_service = approval_service or TrustedApprovalService()
         self.repo_root = Path(repo_root).resolve()
+        self.probes = probe_adapter or RepositoryHeuristicProbeAdapter(self.repo_root, self.state)
 
     def _verify_manifest_authorization(self, tier: str, manifest_id: Optional[str]) -> ChangeManifest:
         """Enforces that T2+ mutations provide a valid, ACCEPTED change manifest."""
@@ -58,34 +109,18 @@ class DeploymentTools:
             )
         return manifest
 
-    # --- Trusted Precondition Probes (Observed Facts, Not Caller Assertions) ---
-    def _probe_nginx_syntax(self) -> bool:
-        """Probes repository and sandbox Nginx configurations for syntax validity."""
-        for conf in self.repo_root.glob("**/nginx/**/*.conf"):
-            try:
-                content = conf.read_text(encoding="utf-8")
-                if content.count("{") != content.count("}"):
-                    return False
-            except Exception:
-                return False
-        return True
+    # --- Trusted Precondition Prechecks (Repository Facts & Probes) ---
+    def _repository_nginx_precheck(self) -> bool:
+        """Evaluates Nginx configuration syntax through probe adapter."""
+        return self.probes.nginx_syntax_valid()
 
-    def _probe_rollback_readiness(self) -> bool:
-        """Probes whether state manager or releases layout has active rollback checkpoints."""
-        return len(self.state.checkpoints) > 0 or (self.repo_root / "templates").exists()
+    def _repository_rollback_precheck(self) -> bool:
+        """Evaluates rollback readiness through probe adapter."""
+        return self.probes.rollback_ready()
 
-    def _probe_ssh_firewall_allowed(self) -> bool:
-        """Probes whether SSH port 22 is explicitly allowed in perimeter configurations."""
-        for f in self.repo_root.glob("**/*"):
-            if f.is_dir() or ".git" in str(f):
-                continue
-            try:
-                content = f.read_text(encoding="utf-8")
-                if "allow 22" in content or "allow ssh" in content.lower():
-                    return True
-            except Exception:
-                pass
-        return False
+    def _repository_firewall_precheck(self) -> bool:
+        """Evaluates SSH port 22 perimeter allowance through probe adapter."""
+        return self.probes.ssh_firewall_allowed()
 
     # --- T0: Pure Computation (No Manifest Required) ---
     def t0_calc_worker_sizing(self, cpu_cores: int, ram_gb: float, is_async: bool = True) -> Dict[str, Any]:
@@ -168,10 +203,10 @@ class DeploymentTools:
         manifest = self._verify_manifest_authorization("T4", manifest_id)
         
         # Probe Nginx syntax independently (NOT caller boolean)
-        if not self._probe_nginx_syntax():
-            raise PreconditionFailure("Nginx reload blocked: Independent syntax probe detected invalid configuration.")
+        if not self._repository_nginx_precheck():
+            raise PreconditionFailure("Nginx reload blocked: Independent syntax precheck detected invalid configuration.")
 
-        if not self._probe_rollback_readiness():
+        if not self._repository_rollback_precheck():
             raise PreconditionFailure("Nginx reload blocked: No rollback checkpoint verified.")
 
         return {
@@ -200,11 +235,12 @@ class DeploymentTools:
         manifest = self._verify_manifest_authorization("T5", manifest_id)
         action_name = "purge_backups"
 
-        # Verify against trusted out-of-band approval service
+        # Verify against trusted out-of-band approval service with exact bound parameters
         approved, err = self.approval_service.verify_action_authorization(
             manifest_id=manifest.manifest_id,
             current_manifest_version=manifest.version,
-            action=action_name
+            action=action_name,
+            arguments={"retention_days": retention_days}
         )
         if not approved:
             raise HumanApprovalRequired(
@@ -226,14 +262,15 @@ class DeploymentTools:
         manifest = self._verify_manifest_authorization("T5", manifest_id)
 
         # Probed safety invariant: Port 22 must be verified open before firewall activation
-        if not self._probe_ssh_firewall_allowed():
+        if not self._repository_firewall_precheck():
             raise PolicyViolation("CRITICAL LOCKOUT HAZARD: Host probe reveals SSH port 22 is NOT allowed in firewall rules!")
 
         action_name = "firewall_lockdown"
         approved, err = self.approval_service.verify_action_authorization(
             manifest_id=manifest.manifest_id,
             current_manifest_version=manifest.version,
-            action=action_name
+            action=action_name,
+            arguments={}
         )
         if not approved:
             raise HumanApprovalRequired(

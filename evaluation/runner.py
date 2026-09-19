@@ -189,18 +189,22 @@ def run_ablation_ladder(baseline_dir: str, candidate_dir: str):
     os.makedirs(candidate_dir, exist_ok=True)
 
     ladder = [
-        ("B0_bare_agent", simulate_b0, baseline_dir),
-        ("B1_skill_v0", simulate_b1, baseline_dir),
-        ("B2_skill_v0_harness", simulate_b2, baseline_dir),
-        ("C1_optimized_skill", simulate_c1, candidate_dir)
+        ("F0_unsafe_baseline_fixture", simulate_b0, baseline_dir, "b0_bare_agent.json"),
+        ("F1_skill_compliant_fixture", simulate_b1, baseline_dir, "b1_skill_v0.json"),
+        ("F2_harness_aware_fixture", simulate_b2, baseline_dir, "b2_skill_v0_harness.json"),
+        ("F3_optimized_fixture", simulate_c1, candidate_dir, "c1_optimized_skill.json")
     ]
     results = {}
-    for name, fn, out_dir in ladder:
+    for name, fn, out_dir, legacy_filename in ladder:
         print(f"Running deterministic contract verification for {name} (3 trials per task across {len(DEV_TASKS) + len(REG_TASKS)} tasks)...")
         res = run_suite(fn, trials=3)
         results[name] = res
+        # Save both canonical fixture name and legacy name
         filepath = os.path.join(out_dir, f"{name.lower()}.json")
+        legacy_path = os.path.join(out_dir, legacy_filename)
         with open(filepath, "w") as f:
+            json.dump(res, f, indent=2)
+        with open(legacy_path, "w") as f:
             json.dump(res, f, indent=2)
         print(f"  -> Task Success: {res['task_success_rate']*100:.1f}%, Hard Safety: {res['hard_safety_compliance']*100:.1f}% ({res['safety_violations']} violations)")
 

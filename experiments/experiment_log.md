@@ -117,3 +117,34 @@ A thorough peer engineering audit identified 6 critical issues in the v1.1 proto
 * **Deterministic Contract Verification Suite**: 11/11 tasks passing with 0 violations across 33 evaluations on C1.
 * **Sealed Frozen Contract Verification**: 100.0% pass rate (12/12 evaluations across 4 unseen tasks with 0 violations).
 * **Decision**: **ACCEPT** Hardened security architecture $\rightarrow$ Recommended SemVer release tag: **`v1.2.0`**.
+
+---
+
+## Experiment 4: Trusted Boundary Hardening, HITL Parameter Binding & Containerized CI (v1.2.1)
+
+* **Date**: 2026-09-19
+* **Experiment ID**: `EXP-004`
+* **Target System**: Full-Stack Deployment Engineering System (`fix/trusted-boundary-hardening`)
+* **Goal**: Close remaining authorization parameter substitution holes, enforce contracts during plan execution, instrument structural discovery health, replace placeholder contracts, decouple host probes, and establish containerized CI.
+
+### 1. Peer Review Diagnoses & Hardening Solutions
+A rigorous second-round architectural review identified 6 remaining P0/P1 areas:
+1. **P0 Authorization Parameter Substitution in HITL**: `ApprovalRecord` previously bound only `(manifest_id, version, action)` without binding action arguments. An agent could obtain approval for `purge_backups` with the operator intending 90-day retention, but execute with `retention_days=1`.
+   * *Patch*: `harness/approvals.py` now computes `action_hash = SHA256(canonical_json({"action": action, "arguments": kwargs}))`. `verify_action_authorization` strictly validates that executed arguments match approved arguments.
+2. **P0 Contract Enforcement Execution Bug**: `verify_all_invariants()` returned `{invariant: (bool, reason)}`, but `core.execute_plan_step()` discarded the return value.
+   * *Patch*: `harness/contracts.py:verify_all_invariants()` now raises `ContractViolation` immediately if any invariant fails or is unknown.
+3. **P1 Placeholder Contracts Returning `True`**: `verify_backup_retention_policy` and `verify_swap_memory_guard` returned `True, None` unconditionally.
+   * *Patch*: Fully implemented parsing of `clean_backups.sh` (enforcing $\ge 7$ days retention, minimum retain count $\ge 1$, and non-system target directories) and swapfile security inspection (enforcing `chmod 600` and prohibiting loose permissions).
+4. **P1 Host Probes vs. Repository Heuristics**: Renamed repository heuristic checks to `_repository_*_precheck()` and defined a clean `HostProbeAdapter` capability interface with `RepositoryHeuristicProbeAdapter`.
+5. **P1 Discovery Telemetry**: `harness/discovery.py` now increments `files_discovered`, `files_parsed`, and records all parse exceptions in `health.parse_failures`. If a file declared in a manifest's targets fails parsing, `harness/impact.py` blocks the mutation with `MANIFEST_INCOMPLETE`.
+6. **P1 Agent Capability Facade**: Implemented `AgentToolGateway` in `harness/core.py` to ensure agent LLM interactions are strictly encapsulated.
+7. **P1 CI Runner Permissions in Ubuntu**: Updated `.github/workflows/ci.yml` and `integration/test_native_linux.py` to execute the containerized testbed via Docker (`integration/Dockerfile`), ensuring root privileges and complete test isolation.
+8. **P1 Fixture Evaluation Terminology**: Recalibrated benchmark rungs to F0–F3 (Deterministic Fixture Validation) and Isolated Evaluation Fixture.
+
+### 2. Verification Results
+* **Consolidated Unit & Security Tests**: 19/19 passing in `evaluation/test_suite.py` (including parameter substitution rejection, gateway execution, and discovery health gating).
+* **Layer A Sandbox Tests**: 4/4 passing in `sandbox/test_sandbox.py`.
+* **Layer B Containerized Linux Integration**: Validated in Ubuntu 24.04 Docker testbed.
+* **Deterministic Fixture Suite**: 11/11 tasks passing across F0, F1, F2, F3 ladder.
+* **Isolated Evaluation Fixture**: 100.0% pass rate (12/12 evaluations across 4 tasks).
+* **Decision**: **ACCEPT** Hardening patch $\rightarrow$ Recommended SemVer release tag: **`v1.2.1`**.

@@ -33,3 +33,9 @@ jobs:
       - name: Run Native Linux Integration Checks (Linux only)
         if: runner.os == 'Linux'
         run: python integration/test_native_linux.py
+
+      - name: Run Layer B Containerized Linux Integration (Docker on Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          docker build -f integration/Dockerfile -t deployment-harness-integration .
+          docker run --rm deployment-harness-integration

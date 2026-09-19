@@ -22,10 +22,12 @@ class TestNativeLinuxIntegration(unittest.TestCase):
         if not self.is_linux:
             self.skipTest("Host is not Linux. Native binary tests execute in Ubuntu 24.04 Docker container or CI.")
 
-        # If on Linux and binaries exist, execute test script
-        if os.path.exists("/usr/sbin/nginx"):
-            res = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
-            self.assertEqual(res.returncode, 0, f"nginx -t failed: {res.stderr}")
+        # Check if running as root (e.g., inside containerized testbed)
+        if hasattr(os, "geteuid") and os.geteuid() == 0 and os.path.exists("/app/integration/run_integration.sh"):
+            res = subprocess.run(["bash", "/app/integration/run_integration.sh"], capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, f"run_integration.sh failed:\n{res.stdout}\n{res.stderr}")
+        else:
+            self.skipTest("Host Linux environment is non-root. Native integration tests run in containerized testbed via Docker.")
 
 if __name__ == "__main__":
     unittest.main()

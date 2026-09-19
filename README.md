@@ -6,7 +6,7 @@
 [![Architecture: Deterministic Change Intelligence](https://img.shields.io/badge/Architecture-Change--Intelligence--Harness-blueviolet.svg)]()
 [![CI](https://github.com/kartorhys-ship-it/fullstack-deployment-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/kartorhys-ship-it/fullstack-deployment-skill/actions/workflows/ci.yml)
 
-A research prototype and modular AI agent engineering skill for automated, zero-downtime full-stack web application deployments on Ubuntu Linux (FastAPI, Node.js/Vite, Nginx, Meilisearch, Cloudflare CDN, and GitHub Actions CI/CD).
+An experimental deterministic safety harness and modular AI agent skill for AI-assisted deployment engineering on Ubuntu Linux (FastAPI, Node.js/Vite, Nginx, Meilisearch, Cloudflare CDN, and GitHub Actions CI/CD). It demonstrates structured impact analysis, transactional change authorization, capability tiering, contract enforcement, simulated HITL controls, and containerized Linux configuration validation.
 
 Extracted from the 10.4-hour course *"How to Deploy, Secure, and Automate Full-Stack Web Apps"* by **Imad Saddik / freeCodeCamp.org** and hardened with **Deterministic Change Intelligence**, this system breaks the self-reinforcing failure loop of AI-generated infrastructure through dynamic structural discovery, blast-radius impact analysis, transactional Change Manifest gating, out-of-band human approvals, and cross-artifact contract enforcement.
 
@@ -28,7 +28,7 @@ This system wraps the LLM with **Deterministic Change Intelligence**:
 ```mermaid
 flowchart TD
     subgraph DiscoveryLayer["1. Structural Discovery & Context (Deterministic)"]
-        A[Repository Files] --> B["discovery.py\n(Dynamic Fact Extraction)"]
+        A[Repository Files] --> B["discovery.py\n(Dynamic Fact Extraction + Health Telemetry)"]
         B --> C["graph.py\n(Explainable Directed Multi-Graph)"]
         C --> D["impact.py\n(Blast Radius Calculator)"]
         D --> E["context_builder.py\n(Task + Target + Graph Neighbors + Invariants)"]
@@ -39,10 +39,10 @@ flowchart TD
     end
 
     subgraph GatekeeperLayer["3. Change Control & Guardrails (Deterministic)"]
-        F --> G{"submit_change_manifest()"}
-        G -- "Declared vs Discovered Gap" --> H["MANIFEST_INCOMPLETE\n(Requires amend_change_manifest)"]
+        F --> G{"AgentToolGateway.submit_manifest()"}
+        G -- "Declared vs Discovered Gap" --> H["MANIFEST_INCOMPLETE\n(Requires amend_manifest)"]
         G -- "Manifest Accepted" --> I["Frozen manifest_id Issued"]
-        I --> J["diff_guard.py\n(Change Surface Guard: No unannounced rewrites)"]
+        I --> J["diff_guard.py\n(Change Surface Guard: Canonical exact targets)"]
         J --> K["policy.py\n(Command & Secret Inspection)"]
     end
 
@@ -52,12 +52,12 @@ flowchart TD
         L --> T1["T1: Read-Only Inspection\n(No manifest)"]
         L --> T2["T2: Staged Modification\n(Requires manifest_id)"]
         L --> T3["T3: Reversible Symlink Switch\n(Requires manifest_id)"]
-        L --> T4["T4: Availability-Affecting Reload\n(Requires manifest_id + Preconditions)"]
-        L --> T5["T5: Destructive / Lockout\n(Requires manifest_id + HITL Approval)"]
+        L --> T4["T4: Availability-Affecting Reload\n(Requires manifest_id + Prechecks)"]
+        L --> T5["T5: Destructive / Lockout\n(Requires manifest_id + Bound HITL Approval)"]
     end
 
     subgraph VerificationLayer["5. Cross-Artifact Contract Engine & Recovery"]
-        T3 & T4 --> M["contracts.py\n(Port consistency, Socket permissions, Cloudflare trust)"]
+        T3 & T4 --> M["contracts.py\n(Fail-closed invariants: Ports, Sockets, CIDRs, Secrets)"]
         M --> V1[Post-Deployment Health Check]
         V1 -- "Health Check Passed" --> S1[Deployment Successful & Verified]
         V1 -- "Health Check Failed" --> S2["Instant Atomic Rollback\n(ln -sfn previous current)"]
@@ -88,11 +88,13 @@ Replaces arbitrary `<25%` diff limits with semantic discipline:
 * Strictly prevents accidental deletion of Nginx `security-headers.conf` inclusions or SSL certificate directives during surgical edits.
 
 ### ⚡ 4. Cross-Artifact Contract Engine (`harness/contracts.py`)
-Deterministically validates cross-service boundaries before reload:
+Deterministically validates cross-service boundaries before reload (fails closed on unknown or violated contracts):
 * `backend_port_consistency`: Gunicorn bind == Supervisor command == Nginx upstream == Healthcheck.
 * `socket_permission_consistency`: Unix socket creation includes `chown deployer:www-data` group permissions.
 * `cloudflare_real_ip_trust`: Restricts `set_real_ip_from` strictly to verified Cloudflare CIDRs, blocking direct client spoofing.
 * `secret_reference_integrity`: Guarantees all credentials use `<SECRET_REF_*>` tokens with no raw secret leaks or orphaned references.
+* `backup_retention_policy`: Guarantees retention $\ge 7$ days and prevents targeting critical system directories.
+* `swap_memory_guard`: Prevents insecure world-writable permissions on swap files.
 
 ---
 
@@ -103,24 +105,26 @@ Deterministically validates cross-service boundaries before reload:
 > This repository is a **research prototype and safety harness** exploring deterministic change control for AI-driven infrastructure engineering. It introduces mathematically and structurally bounded guardrails around non-deterministic LLMs before mutations touch host systems.
 
 ### 🔒 Hardened Security Boundaries
-1. **Out-of-Band Human-in-the-Loop (HITL)**: Destructive and lockout actions (Tier T5, e.g. UFW firewall changes or root SSH disabling) strictly require a cryptographically hashed `ApprovalRecord` generated through an out-of-band operator service ([`harness/approvals.py:TrustedApprovalService`](harness/approvals.py)). The agent's tool surface has no self-approval capabilities.
-2. **Transactional Change Manifest State Machine**: All state-modifying actions (T2–T5) require an accepted `manifest_id` managed via a strict lifecycle (`DRAFT` $\rightarrow$ `PENDING_VALIDATION` $\rightarrow$ `ACCEPTED`). Manifest amendments are transactionally staged and automatically roll back on validation failure.
-3. **Strict Canonical Path Discipline**: Targets and blast radii enforce canonical relative path matching ([`harness/manifest.py:canonicalize_path`](harness/manifest.py)). Traversal sequences (`..`), absolute path escapes, and fuzzy substring matches are rejected before evaluation.
-4. **Fail-Closed Contract Engine**: Cross-artifact contracts ([`harness/contracts.py`](harness/contracts.py)) fail closed: unknown contract types raise `UnknownContractError`. Active host probes verify Nginx syntax, rollback checkpoint availability, and firewall rules directly against the repository filesystem rather than trusting caller-asserted booleans.
-5. **Discovery Telemetry**: Dynamic repository fact extraction tracks parsing health (`DiscoveryHealth`) to detect partial or unparseable configurations.
+1. **Out-of-Band Human-in-the-Loop (HITL)**: Destructive and lockout actions (Tier T5, e.g. UFW firewall changes or database snapshot purging) strictly require a **hashed approval record prototype** generated through an out-of-band operator service ([`harness/approvals.py:TrustedApprovalService`](harness/approvals.py)). Approvals are bound to `(manifest_id, version, action, action_hash)`, where `action_hash = SHA256(canonical_json(action + arguments))` prevents parameter substitution attacks. The agent's tool surface has no self-approval capabilities.
+2. **Capability Facade (`AgentToolGateway`)**: The agent interacts exclusively through [`AgentToolGateway`](harness/core.py), preventing direct invocation of internal tools or bypass of contract verification gates.
+3. **Transactional Change Manifest State Machine**: All state-modifying actions (T2–T5) require an accepted `manifest_id` managed via a strict lifecycle (`DRAFT` $\rightarrow$ `PENDING_VALIDATION` $\rightarrow$ `ACCEPTED`). Manifest amendments are transactionally staged and automatically roll back on validation failure.
+4. **Strict Canonical Path Discipline**: Targets and blast radii enforce canonical relative path matching ([`harness/manifest.py:canonicalize_path`](harness/manifest.py)). Traversal sequences (`..`), absolute path escapes, and fuzzy substring matches are rejected before evaluation.
+5. **Fail-Closed Contract Engine**: Cross-artifact contracts ([`harness/contracts.py`](harness/contracts.py)) fail closed: unknown contract types raise `UnknownContractError`, and any failed invariant raises `ContractViolation` before mutating execution proceeds.
+6. **Preconditions & Host Probes**: Prechecks are cleanly decoupled via [`HostProbeAdapter`](harness/tools.py), with local repository heuristic checks during prototyping and native Linux binary execution in containerized environments.
+7. **Discovery Telemetry**: Dynamic repository fact extraction tracks parsing health (`DiscoveryHealth.parse_failures`). If a declared manifest target file fails structural parsing, mutations are blocked with `MANIFEST_INCOMPLETE`.
 
 ### 🧪 Verification Architecture & Methodology
 - **Layer A (Simulation Sandbox - `sandbox/`)**: Fast, in-memory virtual Linux host and mock HTTP verifier testing atomic cutovers, symlink swaps, and Cloudflare header spoofing defenses.
-- **Layer B (Native Linux Testbed - `integration/`)**: Containerized Ubuntu 24.04 LTS runner testing actual system binaries (`nginx -t`, `visudo -cf`, and systemd unit analyzers).
-- **Ablation & Sealed Fixture Suites (`benchmarks/`, `sealed_evaluator/`)**: Evaluates deterministic response fixtures representing distinct agent archetypes (unconstrained B0 vs domain-structured C1) against invariant specifications to prove that the harness reliably permits safe actions and halts unsafe operations. *(Note: Reported fixture execution times and token counts measure local test execution heuristics; live multi-turn cloud LLM evaluation is tracked for subsequent releases).*
+- **Layer B (Native Linux Testbed - `integration/`)**: Containerized Ubuntu 24.04 LTS runner testing actual system binaries (`nginx -t`, `visudo -cf`, and systemd unit analyzers) inside a pristine root container via Docker.
+- **Deterministic Fixture Validation (`benchmarks/`, `sealed_evaluator/`)**: Evaluates deterministic response fixtures representing distinct agent archetypes (unconstrained F0 vs domain-structured F3) against invariant specifications to prove that the harness reliably permits safe actions and halts unsafe operations. *(Note: Reported fixture execution times and token counts measure local test execution heuristics; live multi-turn cloud LLM evaluation is tracked for subsequent releases).*
 
 ---
 
-## 4. Empirical Skill Optimization: Ablation Ladder Results
+## 4. Deterministic Fixture Validation: Ablation Ladder Results
 
 Following the `agent-skill-optimization` scientific protocol, the system was evaluated across an expanded ablation ladder of **11 development and regression tasks (33 evaluations per rung)**:
 
-| Metric | B0: Bare Agent | B1: SKILL v0.1 | B2: SKILL v0.1 + Harness | C1: Candidate 001 (Optimized) | Sealed Frozen Eval (Unseen) |
+| Metric | F0: Unsafe Baseline Fixture | F1: Skill-Compliant Fixture | F2: Harness-Aware Fixture | F3: Optimized Fixture (Change Intelligence) | Isolated Evaluation Fixture |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Development Task Success** | 0.0% (0/33) | 90.9% (30/33) | 90.9% (30/33) | **100.0% (33/33)** | **100.0% (12/12)** |
 | **Hard Safety Compliance** | 54.5% (15 violations) | 100.0% (0 violations) | **100.0% (0 violations)** | **100.0% (0 violations)** | **100.0% (0 violations)** |
@@ -128,10 +132,10 @@ Following the `agent-skill-optimization` scientific protocol, the system was eva
 | **Median Tokens** | 14 tokens | 19 tokens | 19 tokens | 22 tokens | 56 tokens |
 
 ### Key Findings:
-1. **B0 (Bare Agent)** failed 100% of tasks, committing 15 critical safety violations (e.g. `chmod 777`, premature firewall lockouts, IP spoofing vulnerabilities, cross-file port drift, and raw secret leaks).
-2. **B1 (SKILL v0.1)** achieved 90.9% task success and 100% safety compliance, but failed complex multi-step state rollbacks.
-3. **B2 (SKILL v0.1 + Harness)** added pre-execution guardrails and T0–T5 contracts.
-4. **C1 (Optimized Candidate)** achieved **100.0% task success** across all 11 development tasks and **100.0% on the isolated sealed frozen evaluation suite** (12/12 test executions passing with 0 violations).
+1. **F0 (Unsafe Baseline Fixture)** fails 100% of tasks, committing 15 critical safety violations (e.g. `chmod 777`, premature firewall lockouts, IP spoofing vulnerabilities, cross-file port drift, and raw secret leaks), proving the evaluator catches obvious security regressions.
+2. **F1 (Skill-Compliant Fixture)** achieves 90.9% task success and 100% safety compliance, but fails complex multi-step state rollbacks.
+3. **F2 (Harness-Aware Fixture)** validates manifest expectations and pre-execution guardrails.
+4. **F3 (Optimized Fixture)** achieves **100.0% task success** across all 11 development tasks and **100.0% on the isolated benchmark fixtures** (12/12 test executions passing with 0 violations).
 
 Full experiment records and hypothesis diagnoses are documented in [`experiments/experiment_log.md`](experiments/experiment_log.md).
 
@@ -166,19 +170,19 @@ fullstack-deployment-skill/
 │   └── scripts/                       # clean_backups.sh, reload_nginx.sh, gunicorn_start.sh
 │
 ├── harness/                           # Deterministic Change Intelligence Harness
-│   ├── approvals.py                   # Out-of-band TrustedApprovalService (cryptographic HITL tokens)
-│   ├── core.py                        # Execution budgets, turn manager, context & contract gating
-│   ├── discovery.py                   # Dynamic repository fact extractors (Nginx, Supervisor, Systemd, Shell, .env)
+│   ├── approvals.py                   # Out-of-band TrustedApprovalService (hashed approval records with parameter binding)
+│   ├── core.py                        # Execution budgets, AgentToolGateway capability facade & contract gating
+│   ├── discovery.py                   # Dynamic repository fact extractors with DiscoveryHealth telemetry
 │   ├── graph.py                       # Directed multi-graph data structure with edge provenance
 │   ├── impact.py                      # Blast radius calculator & canonical Declared vs. Discovered gap
 │   ├── context_builder.py             # Bounded context bundler (target + neighbors + invariants)
 │   ├── manifest.py                    # Transactional ChangeManifest state machine & path canonicalizer
 │   ├── diff_guard.py                  # ChangeSurfaceGuard (canonical surgical patch boundary verifier)
-│   ├── contracts.py                   # Fail-closed cross-artifact contract engine (ports, sockets, CIDRs, secrets)
+│   ├── contracts.py                   # Fail-closed cross-artifact contract engine (ports, sockets, CIDRs, secrets, retention, swap)
 │   ├── policy.py                      # Safety invariants, precondition verifiers
 │   ├── secrets.py                     # Secret masking boundary (<SECRET_REF_*>)
 │   ├── state.py                       # Checkpoint engine & atomic rollback manager
-│   └── tools.py                       # T0–T5 tiered tool contracts with active host probes
+│   └── tools.py                       # T0–T5 tiered tool contracts with HostProbeAdapter capability interface
 │
 ├── sandbox/                           # Layer A: Simulation Sandbox
 │   ├── mock_host.py                   # In-memory virtual Linux host

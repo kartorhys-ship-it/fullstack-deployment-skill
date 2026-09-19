@@ -241,17 +241,55 @@ class CrossArtifactContractEngine:
         return True, None
 
     def verify_backup_retention_policy(self, **kwargs) -> Tuple[bool, Optional[str]]:
-        """Verify backup retention parameters."""
+        """Verify backup retention parameters across repository backup scripts."""
+        for sh in self.repo_root.glob("**/*backup*.sh"):
+            try:
+                content = sh.read_text(encoding="utf-8")
+                # Check retention days
+                m_ret = re.search(r"RETENTION_DAYS=(\d+)", content)
+                if m_ret:
+                    days = int(m_ret.group(1))
+                    if days < 7:
+                        return False, f"RETENTION_RISK: {sh.name} sets RETENTION_DAYS={days} < minimum safe 7 days"
+                # Check target backup dir is bounded and not root or system dirs
+                m_dir = re.search(r'BACKUP_DIR=[\'"]([^\'"]+)[\'"]', content)
+                if m_dir:
+                    bdir = m_dir.group(1).strip()
+                    if bdir in ("/", "/etc", "/var", "/bin", "/usr", "/home"):
+                        return False, f"DANGEROUS_TARGET: {sh.name} sets BACKUP_DIR to critical system path '{bdir}'"
+                # Check min retain
+                m_min = re.search(r"MIN_RETAIN=(\d+)", content)
+                if m_min and int(m_min.group(1)) < 1:
+                    return False, f"ZERO_RETAIN: {sh.name} sets MIN_RETAIN to 0, risking zero backups"
+            except Exception:
+                pass
         return True, None
 
     def verify_swap_memory_guard(self, **kwargs) -> Tuple[bool, Optional[str]]:
-        """Verify swap configuration parameters."""
+        """Verify swap configuration parameters across repository scripts/templates."""
+        for pattern in ("templates/**/*", "references/**/*", "scripts/**/*"):
+            for f in self.repo_root.glob(pattern):
+                if f.is_dir() or ".git" in str(f):
+                    continue
+                try:
+                    content = f.read_text(encoding="utf-8")
+                    if "swapfile" in content:
+                        # Invariant: swap permissions must never be loose (chmod 777 or 666)
+                        if "chmod 777" in content or "chmod 666" in content or "chmod 755" in content:
+                            return False, f"INSECURE_SWAP: {f.name} contains insecure world/group permissions on swapfile"
+                except Exception:
+                    pass
         return True, None
 
     def verify_all_invariants(self, invariants: List[str]) -> Dict[str, Tuple[bool, Optional[str]]]:
-        """Verify all requested invariants. Fails closed on any unknown contract."""
+        """Verify all requested invariants. Fails closed on any unknown contract or failed invariant."""
         results = {}
         for inv in invariants:
             res, reason = self.verify_contract(inv)
             results[inv] = (res, reason)
+            if not res:
+                raise ContractViolation(
+                    f"CONTRACT_VIOLATION: Invariant '{inv}' failed verification: {reason}"
+                )
         return results
+

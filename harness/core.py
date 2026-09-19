@@ -50,6 +50,9 @@ class DeploymentHarness:
         self.context_builder = ContextBuilder(self.repo_root, self.graph)
         self.contract_engine = CrossArtifactContractEngine(self.repo_root, self.graph)
 
+        # Agent-facing capability gateway facade
+        self.gateway = AgentToolGateway(self)
+
     def refresh_graph(self):
         """Re-scans the repository to ensure graph reflects actual filesystem truth."""
         self.graph = discover_repository(self.repo_root)
@@ -187,3 +190,42 @@ class DeploymentHarness:
                     result[k] = self.secrets.mask_text(v)
 
         return result
+
+
+class AgentToolGateway:
+    """Agent-facing capability facade.
+    
+    The agent LLM interacts ONLY with this gateway. Enforces capability security:
+    1. Direct access to internal tools, approval service, state manager, and manifest registry is blocked.
+    2. All operations route strictly through harness execution budgets, safety inspection, and contract gates.
+    """
+
+    def __init__(self, harness: DeploymentHarness):
+        self._harness = harness
+
+    def submit_manifest(self, **kwargs) -> ChangeManifest:
+        """Submits a structured ChangeManifest through the transactional harness gate."""
+        return self._harness.submit_change_manifest(**kwargs)
+
+    def amend_manifest(
+        self,
+        manifest_id: str,
+        added_targets: List[str],
+        added_invariants: Optional[List[str]] = None
+    ) -> ChangeManifest:
+        """Amends an existing manifest, recalculating blast radius and invalidating prior approvals."""
+        return self._harness.amend_change_manifest(manifest_id, added_targets, added_invariants)
+
+    def assemble_context(self, task: str, target_files: List[str]) -> Dict[str, Any]:
+        """Assembles structurally bounded context with graph neighbors and invariant rules."""
+        return self._harness.assemble_agent_context(task, target_files)
+
+    def execute_tool(self, tool_name: str, **kwargs) -> Dict[str, Any]:
+        """Executes a tiered tool operation with mandatory contract enforcement and policy inspection."""
+        return self._harness.execute_plan_step(tool_name, kwargs)
+
+    def get_manifest_status(self, manifest_id: str) -> Optional[str]:
+        """Returns current lifecycle status of a manifest."""
+        m = self._harness.manifest_registry.get_manifest(manifest_id)
+        return m.status.value if m else None
+

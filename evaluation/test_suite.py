@@ -108,12 +108,13 @@ class TestHardenedToolContracts(unittest.TestCase):
                 manifest_id=self.manifest.manifest_id
             )
 
-        # Grant trusted out-of-band approval via ApprovalService (NOT agent callable surface)
+        # Grant trusted out-of-band approval via ApprovalService with exact arguments
         self.harness.approval_service.grant_approval(
             manifest_id=self.manifest.manifest_id,
             manifest_version=self.manifest.version,
             action="purge_backups",
-            operator_identity="sec_ops_admin@corp.internal"
+            operator_identity="sec_ops_admin@corp.internal",
+            arguments={"retention_days": 30}
         )
 
         res = self.harness.tools.t5_purge_old_backups(
@@ -122,6 +123,43 @@ class TestHardenedToolContracts(unittest.TestCase):
         )
         self.assertEqual(res["status"], "executed_with_human_authorization")
 
+    def test_parameter_substitution_rejected(self):
+        """Operator approves retention_days=90, agent calls with retention_days=1 -> MUST BE BLOCKED."""
+        self.harness.approval_service.grant_approval(
+            manifest_id=self.manifest.manifest_id,
+            manifest_version=self.manifest.version,
+            action="purge_backups",
+            operator_identity="sec_ops_admin@corp.internal",
+            arguments={"retention_days": 90}
+        )
+
+        with self.assertRaises(HumanApprovalRequired) as ctx:
+            self.harness.tools.t5_purge_old_backups(
+                retention_days=1,
+                manifest_id=self.manifest.manifest_id
+            )
+        self.assertIn("PARAMETER_SUBSTITUTION_DETECTED", str(ctx.exception))
+
+    def test_agent_tool_gateway_execution(self):
+        """Verifies that AgentToolGateway executes tools safely through harness enforcement."""
+        res = self.harness.gateway.execute_tool("t0_calc_worker_sizing", cpu_cores=2, ram_gb=1.0)
+        self.assertEqual(res["tier"], "T0")
+
+    def test_failed_contract_raises_violation_in_plan_step(self):
+        """Executing T4 when a contract fails MUST raise ContractViolation before execution."""
+        bad_manifest = self.harness.manifest_registry.create_pending_manifest(
+            intent="Test bad contract gate",
+            targets=["templates/nginx/fullstack-app.conf"],
+            expected_dependencies=[],
+            invariants=["unknown_violating_contract"],
+            verification=["check_syntax"],
+            rollback={"strategy": "none"}
+        )
+        self.harness.manifest_registry.accept_manifest(bad_manifest.manifest_id)
+
+        with self.assertRaises(ContractViolation):
+            self.harness.execute_plan_step("t4_reload_nginx", {"manifest_id": bad_manifest.manifest_id})
+
     def test_amendment_invalidates_prior_hitl_authorization(self):
         """CRITICAL INVARIANT: Prior approval granted for v1 must fail if manifest is amended to v2."""
         # Grant approval for v1
@@ -129,7 +167,8 @@ class TestHardenedToolContracts(unittest.TestCase):
             manifest_id=self.manifest.manifest_id,
             manifest_version=self.manifest.version,
             action="purge_backups",
-            operator_identity="sec_ops_admin@corp.internal"
+            operator_identity="sec_ops_admin@corp.internal",
+            arguments={"retention_days": 30}
         )
 
         # Amend manifest to version 2
@@ -193,11 +232,51 @@ class TestFailClosedContracts(unittest.TestCase):
         with self.assertRaises(UnknownContractError):
             self.engine.verify_contract("non_existent_magic_contract")
 
-    def test_cloudflare_trust_rejects_open_0_0_0_0(self):
-        """Open trust 0.0.0.0/0 must fail Cloudflare trust contract."""
-        res, reason = self.engine.verify_cloudflare_real_ip_trust()
-        # Default template has legitimate trusted config or passes
-        self.assertTrue(isinstance(res, bool))
+    def test_backup_retention_policy_passes_on_templates(self):
+        """clean_backups.sh specifies RETENTION_DAYS=30 >= 7, which must pass."""
+        passed, reason = self.engine.verify_backup_retention_policy()
+        self.assertTrue(passed, f"verify_backup_retention_policy failed: {reason}")
+
+    def test_swap_memory_guard_contract(self):
+        """Repository templates must satisfy swap memory security invariants."""
+        passed, reason = self.engine.verify_swap_memory_guard()
+        self.assertTrue(passed, f"verify_swap_memory_guard failed: {reason}")
+
+
+class TestDiscoveryHealth(unittest.TestCase):
+    def setUp(self):
+        self.repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+    def test_discovery_health_records_progress(self):
+        graph = discover_repository(self.repo_root)
+        self.assertIsNotNone(graph.health)
+        self.assertGreater(graph.health.files_discovered, 0)
+        self.assertGreater(graph.health.files_parsed, 0)
+        self.assertTrue(graph.health.is_healthy)
+
+    def test_discovery_failure_blocks_target_manifest(self):
+        from harness.impact import ImpactAnalyzer
+        graph = discover_repository(self.repo_root)
+        # Inject simulated parse failure for a declared target
+        graph.health.parse_failures.append({
+            "file": "templates/nginx/corrupted.conf",
+            "error": "Syntax error on line 12",
+            "extractor": "nginx"
+        })
+        analyzer = ImpactAnalyzer(graph)
+        manifest = ChangeManifest(
+            manifest_id="chg_test_parse_fail",
+            version=1,
+            intent="Test corrupt file",
+            targets=["templates/nginx/corrupted.conf"],
+            expected_dependencies=[],
+            invariants=[],
+            verification=["nginx_syntax"],
+            rollback={"strategy": "none"}
+        )
+        passed, err = analyzer.verify_manifest_impact(manifest)
+        self.assertFalse(passed)
+        self.assertIn("discovery_parse_failures", str(err))
 
 
 class TestTransactionalManifestState(unittest.TestCase):

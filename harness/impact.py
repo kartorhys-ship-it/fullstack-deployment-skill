@@ -102,6 +102,21 @@ class ImpactAnalyzer:
         # Canonical declared file targets strictly
         declared_file_targets = set(t.replace("\\", "/").lstrip("./") for t in manifest.targets)
 
+        # Check if any declared target failed structural discovery parsing
+        if hasattr(self.graph, "health") and self.graph.health and self.graph.health.parse_failures:
+            failed_targets = []
+            for fail in self.graph.health.parse_failures:
+                f_norm = fail.get("file", "").replace("\\", "/").lstrip("./")
+                if f_norm in declared_file_targets:
+                    failed_targets.append(f"{f_norm} (Error: {fail.get('error')})")
+            if failed_targets:
+                err = ManifestIncompleteError(
+                    declared_targets=manifest.targets,
+                    missing_dependents=failed_targets,
+                    explanations={"discovery_parse_failures": "; ".join(failed_targets)}
+                )
+                return False, err
+
         missing = []
         explanations = {}
 

@@ -64,9 +64,12 @@ class InfrastructureScanner:
             if "supervisor" in rel_file:
                 continue
 
+            self.health.files_discovered += 1
             try:
                 lines = conf_path.read_text(encoding="utf-8").splitlines()
-            except Exception:
+                self.health.files_parsed += 1
+            except Exception as e:
+                self.health.parse_failures.append({"file": rel_file, "error": str(e), "extractor": "nginx"})
                 continue
 
             current_upstream = None
@@ -138,9 +141,12 @@ class InfrastructureScanner:
     def _scan_supervisor_configs(self):
         for conf_path in self.repo_root.glob("**/supervisor/**/*.conf"):
             rel_file = self._relative_path(conf_path)
+            self.health.files_discovered += 1
             try:
                 lines = conf_path.read_text(encoding="utf-8").splitlines()
-            except Exception:
+                self.health.files_parsed += 1
+            except Exception as e:
+                self.health.parse_failures.append({"file": rel_file, "error": str(e), "extractor": "supervisor"})
                 continue
 
             current_program = None
@@ -195,9 +201,12 @@ class InfrastructureScanner:
             service_node = f"systemd:{service_name}"
             self.graph.add_node(service_node, "systemd_service", {"file": rel_file})
 
+            self.health.files_discovered += 1
             try:
                 lines = service_path.read_text(encoding="utf-8").splitlines()
-            except Exception:
+                self.health.files_parsed += 1
+            except Exception as e:
+                self.health.parse_failures.append({"file": rel_file, "error": str(e), "extractor": "systemd"})
                 continue
 
             for idx, line in enumerate(lines, 1):
@@ -241,9 +250,12 @@ class InfrastructureScanner:
             script_node = f"script:{sh_path.name}"
             self.graph.add_node(script_node, "shell_script", {"file": rel_file})
 
+            self.health.files_discovered += 1
             try:
                 lines = sh_path.read_text(encoding="utf-8").splitlines()
-            except Exception:
+                self.health.files_parsed += 1
+            except Exception as e:
+                self.health.parse_failures.append({"file": rel_file, "error": str(e), "extractor": "shell"})
                 continue
 
             for idx, line in enumerate(lines, 1):
@@ -292,12 +304,15 @@ class InfrastructureScanner:
 
     def _scan_env_files(self):
         for env_path in self.repo_root.glob("**/*env*"):
-            if env_path.is_dir():
+            if env_path.is_dir() or ".git" in str(env_path):
                 continue
             rel_file = self._relative_path(env_path)
+            self.health.files_discovered += 1
             try:
                 lines = env_path.read_text(encoding="utf-8").splitlines()
-            except Exception:
+                self.health.files_parsed += 1
+            except Exception as e:
+                self.health.parse_failures.append({"file": rel_file, "error": str(e), "extractor": "env"})
                 continue
 
             for idx, line in enumerate(lines, 1):
